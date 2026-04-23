@@ -13,9 +13,7 @@ jobs:
   deploy:
     name: ${{ github.ref == 'refs/heads/main' && 'Deploy to production' || 'Deploy preview' }}
     runs-on: ubuntu-latest
-
-    # Only run if CI passed (when both workflows trigger on the same event)
-    needs: []
+    if: ${{ secrets.VERCEL_TOKEN != '' }}
 
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
