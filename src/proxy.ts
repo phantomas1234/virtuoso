@@ -11,7 +11,7 @@ function hasSession(req: NextRequest) {
   )
 }
 
-export function proxy(req: NextRequest) {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const isLoggedIn = hasSession(req)
 
