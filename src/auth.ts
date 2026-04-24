@@ -3,6 +3,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import Google from "next-auth/providers/google"
 import Apple from "next-auth/providers/apple"
 import GitHub from "next-auth/providers/github"
+import Resend from "next-auth/providers/resend"
 import { prisma } from "@/lib/prisma"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -16,6 +17,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.GITHUB_ID!,
       clientSecret: process.env.GITHUB_SECRET!,
     }),
+    Resend({
+      apiKey: process.env.RESEND_API_KEY,
+      from: process.env.EMAIL_FROM ?? "onboarding@resend.dev",
+    }),
     // Apple requires a pre-generated JWT as clientSecret.
     // Generate it with: node -e "require('./src/lib/apple-secret').generateAppleSecret().then(console.log)"
     // Then store the result in APPLE_CLIENT_SECRET env var (valid for up to 6 months).
@@ -28,6 +33,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: "database",
   },
   callbacks: {
+    signIn({ user }) {
+      if (process.env.VERCEL_ENV === "preview" && user.email !== "niko.sonnenschein@gmail.com") {
+        return false
+      }
+      return true
+    },
     session({ session, user }) {
       session.user.id = user.id
       return session

@@ -1,6 +1,7 @@
 import { signIn } from "@/auth"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Music } from "lucide-react"
 
 function SignInButton({ provider, label, icon }: { provider: string; label: string; icon: React.ReactNode }) {
@@ -19,6 +20,12 @@ function SignInButton({ provider, label, icon }: { provider: string; label: stri
   )
 }
 
+async function signInWithEmail(formData: FormData) {
+  "use server"
+  const email = formData.get("email") as string
+  await signIn("resend", { email, redirectTo: "/dashboard" })
+}
+
 export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
@@ -31,6 +38,16 @@ export default function LoginPage() {
           <CardDescription>Track your musical journey and celebrate every milestone</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <form action={signInWithEmail} className="flex flex-col gap-2">
+            <Input name="email" type="email" placeholder="you@example.com" required />
+            <Button type="submit" className="w-full">Continue with email</Button>
+          </form>
+          <div className="relative my-1">
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
           <SignInButton
             provider="google"
             label="Continue with Google"
