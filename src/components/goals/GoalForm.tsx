@@ -1,6 +1,6 @@
 "use client"
 
-import { useForm, type SubmitHandler } from "react-hook-form"
+import { useForm, useWatch, type SubmitHandler } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useRouter } from "next/navigation"
@@ -39,8 +39,8 @@ export function GoalForm({ goal }: GoalFormProps) {
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,8 +55,8 @@ export function GoalForm({ goal }: GoalFormProps) {
     },
   })
 
-  const goalType = watch("goalType")
-  const splitHands = watch("splitHands")
+  const goalType = useWatch({ control, name: "goalType" })
+  const splitHands = useWatch({ control, name: "splitHands" })
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     try {
@@ -126,7 +126,7 @@ export function GoalForm({ goal }: GoalFormProps) {
 
       {goalType === "BPM" && (
         <div className="space-y-2">
-          <Label htmlFor="targetBpm">Target BPM</Label>
+          <Label htmlFor="targetBpm">Target BPM{splitHands ? " (both hands)" : ""}</Label>
           <Input
             id="targetBpm"
             type="number"
