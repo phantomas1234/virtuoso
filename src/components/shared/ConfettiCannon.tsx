@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react"
 import confetti from "canvas-confetti"
 
-export function useConfetti() {
+function useConfetti() {
   const fired = useRef(false)
 
   const fire = () => {
