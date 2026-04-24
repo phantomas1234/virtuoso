@@ -33,6 +33,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: "database",
   },
   callbacks: {
+    signIn({ user }) {
+      if (process.env.VERCEL_ENV === "preview" && user.email !== "niko.sonnenschein@gmail.com") {
+        return false
+      }
+      return true
+    },
     session({ session, user }) {
       session.user.id = user.id
       return session
