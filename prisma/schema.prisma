@@ -62,6 +62,7 @@ model Goal {
   description    String?    @db.Text
   goalType       GoalType   @default(OPEN)
   targetBpm      Int?
+  splitHands     Boolean    @default(false)
   status         GoalStatus @default(ACTIVE)
   position       Int
   youtubeUrl     String?
@@ -87,10 +88,16 @@ enum GoalStatus {
   ARCHIVED
 }
 
+enum Hand {
+  LEFT
+  RIGHT
+}
+
 model ProgressEntry {
   id        String   @id @default(cuid())
   goalId    String
   bpm       Int?
+  hand      Hand?
   note      String?  @db.Text
   date      DateTime @default(now())
   createdAt DateTime @default(now())

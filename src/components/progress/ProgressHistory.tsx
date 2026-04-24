@@ -8,12 +8,25 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import type { ProgressEntry, GoalType } from "@prisma/client"
+import type { GoalType } from "@prisma/client"
+
+type ProgressEntry = {
+  id: string
+  goalId: string
+  bpm: number | null
+  note: string | null
+  date: Date
+  createdAt: Date
+  hand?: "LEFT" | "RIGHT" | null
+}
+
+const HAND_LABELS: Record<string, string> = { LEFT: "Left", RIGHT: "Right" }
 
 interface ProgressHistoryProps {
   entries: ProgressEntry[]
   goalId: string
   goalType: GoalType
+  splitHands?: boolean
 }
 
 interface EditState {
@@ -22,7 +35,7 @@ interface EditState {
   date: string
 }
 
-export function ProgressHistory({ entries, goalId, goalType }: ProgressHistoryProps) {
+export function ProgressHistory({ entries, goalId, goalType, splitHands }: ProgressHistoryProps) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editState, setEditState] = useState<EditState>({ bpm: "", note: "", date: "" })
@@ -80,6 +93,7 @@ export function ProgressHistory({ entries, goalId, goalType }: ProgressHistoryPr
           <tr>
             <th className="px-4 py-2 text-left font-medium">Date</th>
             {goalType === "BPM" && <th className="px-4 py-2 text-left font-medium font-mono">BPM</th>}
+            {splitHands && <th className="px-4 py-2 text-left font-medium">Hand</th>}
             <th className="px-4 py-2 text-left font-medium">Notes</th>
             <th className="px-4 py-2 w-20" />
           </tr>
@@ -109,6 +123,11 @@ export function ProgressHistory({ entries, goalId, goalType }: ProgressHistoryPr
                       />
                     </td>
                   )}
+                  {splitHands && (
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {entry.hand ? HAND_LABELS[entry.hand] : "—"}
+                    </td>
+                  )}
                   <td className="px-4 py-2">
                     <Textarea
                       value={editState.note}
@@ -135,6 +154,11 @@ export function ProgressHistory({ entries, goalId, goalType }: ProgressHistoryPr
                   </td>
                   {goalType === "BPM" && (
                     <td className="px-4 py-2 font-mono font-medium">{entry.bpm ?? "—"}</td>
+                  )}
+                  {splitHands && (
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {entry.hand ? HAND_LABELS[entry.hand] : "—"}
+                    </td>
                   )}
                   <td className="px-4 py-2 text-muted-foreground">{entry.note ?? "—"}</td>
                   <td className="px-4 py-2">

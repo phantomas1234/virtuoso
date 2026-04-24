@@ -12,7 +12,10 @@ async function getGoals(userId: string, status?: GoalStatus) {
   return prisma.goal.findMany({
     where: { userId, ...(status ? { status } : {}) },
     orderBy: { position: "asc" },
-    include: { _count: { select: { progressEntries: true, attachments: true } } },
+    include: {
+      _count: { select: { progressEntries: true, attachments: true } },
+      progressEntries: { select: { bpm: true, hand: true }, orderBy: { date: "desc" }, take: 10 },
+    },
   })
 }
 

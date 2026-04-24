@@ -8,6 +8,7 @@ const updateGoalSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
   targetBpm: z.number().int().positive().nullable().optional(),
+  splitHands: z.boolean().optional(),
   youtubeUrl: z.string().url().optional().or(z.literal("")).nullable().optional(),
   status: z.enum(["ACTIVE", "ACCOMPLISHED", "ARCHIVED"]).optional(),
 })

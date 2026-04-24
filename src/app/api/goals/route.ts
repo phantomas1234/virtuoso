@@ -8,6 +8,7 @@ const createGoalSchema = z.object({
   description: z.string().optional(),
   goalType: z.enum(["BPM", "OPEN"]),
   targetBpm: z.number().int().positive().optional(),
+  splitHands: z.boolean().optional(),
   youtubeUrl: z.string().url().optional().or(z.literal("")),
 })
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   const parsed = createGoalSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { title, description, goalType, targetBpm, youtubeUrl } = parsed.data
+  const { title, description, goalType, targetBpm, splitHands, youtubeUrl } = parsed.data
 
   const maxPosition = await prisma.goal.aggregate({
     where: { userId: session.user.id },
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       description,
       goalType,
       targetBpm: goalType === "BPM" ? targetBpm : null,
+      splitHands: goalType === "BPM" ? (splitHands ?? false) : false,
       youtubeUrl: youtubeUrl || null,
       position,
     },

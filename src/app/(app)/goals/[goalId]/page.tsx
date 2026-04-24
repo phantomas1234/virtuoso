@@ -127,7 +127,8 @@ export default async function GoalDetailPage({ params }: { params: Promise<{ goa
           <Separator />
           <section className="space-y-4">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Progress</h2>
-            <ProgressChart entries={goal.progressEntries} targetBpm={goal.targetBpm} />
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            <ProgressChart entries={goal.progressEntries} targetBpm={goal.targetBpm} splitHands={(goal as any).splitHands} />
             <Metronome
               defaultBpm={
                 goal.progressEntries.at(-1)?.bpm ??

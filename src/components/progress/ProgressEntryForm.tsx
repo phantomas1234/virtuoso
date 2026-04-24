@@ -14,6 +14,7 @@ import type { GoalType, ProgressEntry } from "@prisma/client"
 
 const schema = z.object({
   bpm: z.number().int().positive().optional(),
+  hand: z.enum(["LEFT", "RIGHT"]).optional(),
   note: z.string().optional(),
   date: z.string().min(1),
 })
@@ -23,10 +24,11 @@ type FormData = z.infer<typeof schema>
 interface ProgressEntryFormProps {
   goalId: string
   goalType: GoalType
+  splitHands?: boolean
   onSuccess: (entry: ProgressEntry, goalAccomplished: boolean) => void
 }
 
-export function ProgressEntryForm({ goalId, goalType, onSuccess }: ProgressEntryFormProps) {
+export function ProgressEntryForm({ goalId, goalType, splitHands, onSuccess }: ProgressEntryFormProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const {
@@ -37,9 +39,7 @@ export function ProgressEntryForm({ goalId, goalType, onSuccess }: ProgressEntry
   } = useForm<FormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(schema) as any,
-    defaultValues: {
-      date: format(new Date(), "yyyy-MM-dd"),
-    },
+    defaultValues: { date: format(new Date(), "yyyy-MM-dd") },
   })
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
@@ -94,6 +94,20 @@ export function ProgressEntryForm({ goalId, goalType, onSuccess }: ProgressEntry
               {...register("bpm", { valueAsNumber: true })}
             />
             {errors.bpm && <p className="text-xs text-destructive">{errors.bpm.message}</p>}
+          </div>
+        )}
+        {goalType === "BPM" && splitHands && (
+          <div className="space-y-1">
+            <Label htmlFor="hand" className="text-xs">Hand</Label>
+            <select
+              id="hand"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              {...register("hand")}
+            >
+              <option value="">— unspecified —</option>
+              <option value="LEFT">Left</option>
+              <option value="RIGHT">Right</option>
+            </select>
           </div>
         )}
         <div className="space-y-1">

@@ -26,12 +26,14 @@ export function GoalDetailClient({ goal }: GoalDetailClientProps) {
       <ProgressEntryForm
         goalId={goal.id}
         goalType={goal.goalType}
+        splitHands={goal.splitHands}
         onSuccess={handleProgressSuccess}
       />
       <ProgressHistory
         entries={goal.progressEntries}
         goalId={goal.id}
         goalType={goal.goalType}
+        splitHands={goal.splitHands}
       />
     </div>
   )

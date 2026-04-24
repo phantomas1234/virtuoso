@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 
 const updateEntrySchema = z.object({
   bpm: z.number().int().positive().nullable().optional(),
+  hand: z.enum(["LEFT", "RIGHT"]).nullable().optional(),
   note: z.string().nullable().optional(),
   date: z.string().optional(),
 })
@@ -34,11 +35,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<Para
   const parsed = updateEntrySchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { bpm, note, date } = parsed.data
+  const { bpm, hand, note, date } = parsed.data
   const updated = await prisma.progressEntry.update({
     where: { id: entryId },
     data: {
       ...(bpm !== undefined ? { bpm } : {}),
+      ...(hand !== undefined ? { hand } : {}),
       ...(note !== undefined ? { note } : {}),
       ...(date ? { date: new Date(date) } : {}),
     },

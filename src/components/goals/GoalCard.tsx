@@ -5,6 +5,7 @@ import { GripVertical, Trophy, Target, FileText } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { GoalWithCounts } from "@/types"
+import { bpmProgressColor } from "@/lib/utils"
 import type { DraggableAttributes } from "@dnd-kit/core"
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities"
 
@@ -13,6 +14,45 @@ interface GoalCardProps {
   dragHandleListeners?: SyntheticListenerMap
   dragHandleAttributes?: DraggableAttributes
   isDragging?: boolean
+}
+
+function BpmProgressBar({ bpm, targetBpm, label }: { bpm: number | null; targetBpm: number; label?: string }) {
+  const pct = bpm != null ? Math.min(100, Math.round((bpm / targetBpm) * 100)) : null
+  const { bar, text } = bpmProgressColor(pct)
+  return (
+    <div className="space-y-0.5">
+      {label && <p className="text-xs text-muted-foreground">{label}</p>}
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${bar}`} style={{ width: `${pct ?? 0}%` }} />
+      </div>
+      <p className={`text-xs font-medium ${text}`}>
+        {pct != null ? `${bpm} BPM — ${pct}%` : "No sessions yet"}
+      </p>
+    </div>
+  )
+}
+
+function BpmProgress({ goal }: { goal: GoalWithCounts }) {
+  const targetBpm = goal.targetBpm!
+  const entries = goal.progressEntries ?? []
+
+  if (goal.splitHands) {
+    const latestLeft = entries.find(e => e.hand === "LEFT")?.bpm ?? null
+    const latestRight = entries.find(e => e.hand === "RIGHT")?.bpm ?? null
+    return (
+      <div className="mt-2 space-y-2">
+        <BpmProgressBar bpm={latestLeft} targetBpm={targetBpm} label="Left hand" />
+        <BpmProgressBar bpm={latestRight} targetBpm={targetBpm} label="Right hand" />
+      </div>
+    )
+  }
+
+  const latestBpm = entries[0]?.bpm ?? null
+  return (
+    <div className="mt-2">
+      <BpmProgressBar bpm={latestBpm} targetBpm={targetBpm} />
+    </div>
+  )
 }
 
 const STATUS_LABELS: Record<string, { label: string; variant: "success" | "warning" | "secondary" }> = {
@@ -59,6 +99,8 @@ export function GoalCard({ goal, dragHandleListeners, dragHandleAttributes, isDr
               )}
             </div>
           </div>
+
+          {goal.goalType === "BPM" && goal.targetBpm && <BpmProgress goal={goal} />}
 
           <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
             {goal.goalType === "BPM" && (

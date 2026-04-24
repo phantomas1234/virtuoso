@@ -18,6 +18,7 @@ const schema = z
     description: z.string().optional(),
     goalType: z.enum(["BPM", "OPEN"]),
     targetBpm: z.number().int().positive().optional(),
+    splitHands: z.boolean().optional(),
     youtubeUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   })
   .refine((d) => d.goalType !== "BPM" || (d.targetBpm !== undefined && d.targetBpm > 0), {
@@ -49,11 +50,13 @@ export function GoalForm({ goal }: GoalFormProps) {
       description: goal?.description ?? "",
       goalType: (goal?.goalType as "BPM" | "OPEN") ?? "OPEN",
       targetBpm: goal?.targetBpm ?? undefined,
+      splitHands: goal?.splitHands ?? false,
       youtubeUrl: goal?.youtubeUrl ?? "",
     },
   })
 
   const goalType = watch("goalType")
+  const splitHands = watch("splitHands")
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     try {
@@ -135,6 +138,23 @@ export function GoalForm({ goal }: GoalFormProps) {
           />
           {errors.targetBpm && <p className="text-sm text-destructive">{errors.targetBpm.message}</p>}
         </div>
+      )}
+
+      {goalType === "BPM" && (
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="sr-only"
+            {...register("splitHands")}
+          />
+          <div
+            aria-hidden="true"
+            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${splitHands ? "bg-primary" : "bg-input"}`}
+          >
+            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${splitHands ? "translate-x-4" : "translate-x-0"}`} />
+          </div>
+          <span className="text-sm font-medium">Track hands separately</span>
+        </label>
       )}
 
       <div className="space-y-2">
