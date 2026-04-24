@@ -9,7 +9,6 @@ import { Separator } from "@/components/ui/separator"
 import { YouTubeEmbed } from "@/components/attachments/YouTubeEmbed"
 import { AttachmentList } from "@/components/attachments/AttachmentList"
 import { AttachmentUploader } from "@/components/attachments/AttachmentUploader"
-import { ProgressChart } from "@/components/progress/ProgressChart"
 import { ProjectionChart } from "@/components/progress/ProjectionChart"
 import { Metronome } from "@/components/goals/Metronome"
 import { GoalDetailClient } from "./GoalDetailClient"
@@ -128,11 +127,7 @@ export default async function GoalDetailPage({ params }: { params: Promise<{ goa
           <Separator />
           <section className="space-y-4">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Progress</h2>
-            {goal.targetBpm ? (
-              <ProjectionChart entries={goal.progressEntries} targetBpm={goal.targetBpm} splitHands={goal.splitHands} />
-            ) : (
-              <ProgressChart entries={goal.progressEntries} targetBpm={goal.targetBpm} splitHands={goal.splitHands} />
-            )}
+            <ProjectionChart entries={goal.progressEntries} targetBpm={goal.targetBpm} splitHands={goal.splitHands} />
             <Metronome
               defaultBpm={
                 goal.progressEntries.at(-1)?.bpm ??
