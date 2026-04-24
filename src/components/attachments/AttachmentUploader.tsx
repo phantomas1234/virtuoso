@@ -10,13 +10,6 @@ interface AttachmentUploaderProps {
   goalId: string
 }
 
-function detectAttachmentType(mimeType: string) {
-  if (mimeType === "application/pdf") return "PDF"
-  if (mimeType.startsWith("video/")) return "VIDEO"
-  if (mimeType.startsWith("image/")) return "IMAGE"
-  if (mimeType.startsWith("audio/")) return "AUDIO"
-  return "OTHER"
-}
 
 export function AttachmentUploader({ goalId }: AttachmentUploaderProps) {
   const router = useRouter()
