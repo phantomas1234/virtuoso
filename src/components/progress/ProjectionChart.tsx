@@ -78,7 +78,7 @@ export function ProjectionChart({ entries, targetBpm, splitHands }: ProjectionCh
     if (showProjection) setSelectedModel(null)
   }
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo((): Record<string, string | number | null>[] => {
     if (!splitHands) {
       const baseData = sorted.map(e => ({
         date: format(new Date(e.date), "MMM d"),
