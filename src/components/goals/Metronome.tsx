@@ -18,6 +18,7 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bpmRef = useRef(bpm)
   const isPlayingRef = useRef(false)
+  const schedulerRef = useRef<(() => void) | null>(null)
 
   useEffect(() => { bpmRef.current = bpm }, [bpm])
 
@@ -46,8 +47,10 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
       }, msUntilBeat)
       nextBeatTimeRef.current += 60 / bpmRef.current
     }
-    timerRef.current = setTimeout(scheduler, 25)
+    timerRef.current = setTimeout(() => schedulerRef.current?.(), 25)
   }, [scheduleClick])
+
+  useEffect(() => { schedulerRef.current = scheduler }, [scheduler])
 
   const start = useCallback(() => {
     if (!audioCtxRef.current) {
