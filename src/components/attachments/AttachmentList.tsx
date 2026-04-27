@@ -25,6 +25,39 @@ export function AttachmentList({ attachments, goalId }: AttachmentListProps) {
   const router = useRouter()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+  const [loadingUrl, setLoadingUrl] = useState<string | null>(null)
+
+  const fetchSignedUrl = async (attachment: Attachment): Promise<string | null> => {
+    if (signedUrls[attachment.id]) return signedUrls[attachment.id]
+    setLoadingUrl(attachment.id)
+    try {
+      const res = await fetch(`/api/goals/${goalId}/attachments/${attachment.id}/signed-url`)
+      if (!res.ok) throw new Error()
+      const { url } = await res.json()
+      setSignedUrls((prev) => ({ ...prev, [attachment.id]: url }))
+      return url
+    } catch {
+      toast.error("Failed to load file")
+      return null
+    } finally {
+      setLoadingUrl(null)
+    }
+  }
+
+  const handleView = async (attachment: Attachment) => {
+    if (expanded === attachment.id) {
+      setExpanded(null)
+      return
+    }
+    const url = await fetchSignedUrl(attachment)
+    if (url) setExpanded(attachment.id)
+  }
+
+  const handleOpen = async (attachment: Attachment) => {
+    const url = await fetchSignedUrl(attachment)
+    if (url) window.open(url, "_blank", "noopener,noreferrer")
+  }
 
   const deleteAttachment = async (id: string) => {
     setDeleting(id)
@@ -47,6 +80,7 @@ export function AttachmentList({ attachments, goalId }: AttachmentListProps) {
       {attachments.map((attachment) => {
         const Icon = ICONS[attachment.attachmentType]
         const isExpanded = expanded === attachment.id
+        const isLoadingThis = loadingUrl === attachment.id
 
         return (
           <div key={attachment.id} className="rounded-lg border overflow-hidden">
@@ -58,14 +92,19 @@ export function AttachmentList({ attachments, goalId }: AttachmentListProps) {
                   size="sm"
                   variant="ghost"
                   className="h-7 text-xs"
-                  onClick={() => setExpanded(isExpanded ? null : attachment.id)}
+                  onClick={() => handleView(attachment)}
+                  disabled={isLoadingThis}
                 >
                   {isExpanded ? "Collapse" : "View"}
                 </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
-                  <a href={attachment.url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => handleOpen(attachment)}
+                  disabled={isLoadingThis}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   size="icon"
@@ -78,9 +117,13 @@ export function AttachmentList({ attachments, goalId }: AttachmentListProps) {
                 </Button>
               </div>
             </div>
-            {isExpanded && (
+            {isExpanded && signedUrls[attachment.id] && (
               <div className="border-t">
-                <AttachmentViewer attachment={attachment} />
+                <AttachmentViewer
+                  url={signedUrls[attachment.id]}
+                  name={attachment.name}
+                  attachmentType={attachment.attachmentType}
+                />
               </div>
             )}
           </div>

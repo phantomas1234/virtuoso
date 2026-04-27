@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { PutObjectCommand } from "@aws-sdk/client-s3"
-import { r2, R2_BUCKET, R2_PUBLIC_URL } from "@/lib/r2"
+import { r2, R2_BUCKET } from "@/lib/r2"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import type { AttachmentType } from "@prisma/client"
@@ -43,14 +43,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
     })
   )
 
-  const url = `${R2_PUBLIC_URL}/${key}`
-
   const attachment = await prisma.attachment.create({
     data: {
       goalId,
       userId: session.user.id,
       name: file.name,
-      url,
+      url: key,
       fileKey: key,
       mimeType: file.type || "application/octet-stream",
       attachmentType: detectAttachmentType(file.type),
