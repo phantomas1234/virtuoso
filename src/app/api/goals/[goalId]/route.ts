@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { del } from "@vercel/blob"
+import { DeleteObjectCommand } from "@aws-sdk/client-s3"
+import { r2, R2_BUCKET } from "@/lib/r2"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 
@@ -76,13 +77,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ g
   if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (goal === "forbidden") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-  // Clean up Blob files before deleting
   const attachments = await prisma.attachment.findMany({
     where: { goalId },
-    select: { url: true },
+    select: { fileKey: true, url: true },
   })
   for (const a of attachments) {
-    try { await del(a.url) } catch { /* ignore */ }
+    const key = a.fileKey ?? a.url
+    try { await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key })) } catch { /* ignore */ }
   }
 
   await prisma.goal.delete({ where: { id: goalId } })
