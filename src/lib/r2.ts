@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3"
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 export const r2 = new S3Client({
@@ -14,4 +14,12 @@ export const R2_BUCKET = process.env.R2_BUCKET_NAME!
 
 export function getSignedUrl(key: string, expiresIn = 3600) {
   return awsGetSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }), { expiresIn })
+}
+
+export function getPresignedUploadUrl(key: string, contentType: string, expiresIn = 3600) {
+  return awsGetSignedUrl(
+    r2,
+    new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType }),
+    { expiresIn }
+  )
 }

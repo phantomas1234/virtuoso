@@ -10,7 +10,6 @@ interface AttachmentUploaderProps {
   goalId: string
 }
 
-
 export function AttachmentUploader({ goalId }: AttachmentUploaderProps) {
   const router = useRouter()
   const [uploading, setUploading] = useState(false)
@@ -22,17 +21,38 @@ export function AttachmentUploader({ goalId }: AttachmentUploaderProps) {
     setUploading(true)
     try {
       for (const file of files) {
-        const formData = new FormData()
-        formData.append("file", file)
-        formData.append("goalId", goalId)
-
-        const res = await fetch(`/api/goals/${goalId}/attachments/upload`, {
+        // Step 1: get a pre-signed PUT URL from our API
+        const presignRes = await fetch(`/api/goals/${goalId}/attachments/presign`, {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, contentType: file.type, size: file.size }),
         })
+        if (!presignRes.ok) {
+          const { error } = await presignRes.json()
+          toast.error(error ?? `Failed to upload ${file.name}`)
+          continue
+        }
+        const { uploadUrl, key } = await presignRes.json()
 
-        if (!res.ok) {
+        // Step 2: upload directly to R2 (bypasses Vercel body size limits)
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type },
+          body: file,
+        })
+        if (!uploadRes.ok) {
           toast.error(`Failed to upload ${file.name}`)
+          continue
+        }
+
+        // Step 3: record the attachment in the database
+        const confirmRes = await fetch(`/api/goals/${goalId}/attachments/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, name: file.name, mimeType: file.type, size: file.size }),
+        })
+        if (!confirmRes.ok) {
+          toast.error(`Failed to save ${file.name}`)
           continue
         }
 

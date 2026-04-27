@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-import { PutObjectCommand } from "@aws-sdk/client-s3"
-import { r2, R2_BUCKET } from "@/lib/r2"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import type { AttachmentType } from "@prisma/client"
@@ -22,37 +20,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
   if (!goal) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (goal.userId !== session.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-  const formData = await req.formData()
-  const file = formData.get("file") as File | null
-  if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 })
-
-  const MAX_SIZE = 256 * 1024 * 1024 // 256 MB
-  if (file.size > MAX_SIZE) {
-    return NextResponse.json({ error: "File too large (max 256 MB)" }, { status: 413 })
-  }
-
-  const ext = file.name.includes(".") ? file.name.split(".").pop() : ""
-  const key = `goals/${goalId}/${crypto.randomUUID()}${ext ? `.${ext}` : ""}`
-
-  await r2.send(
-    new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: Buffer.from(await file.arrayBuffer()),
-      ContentType: file.type || "application/octet-stream",
-    })
-  )
+  const { key, name, mimeType, size } = await req.json()
+  if (!key || !name || !mimeType) return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
 
   const attachment = await prisma.attachment.create({
     data: {
       goalId,
       userId: session.user.id,
-      name: file.name,
+      name,
       url: key,
       fileKey: key,
-      mimeType: file.type || "application/octet-stream",
-      attachmentType: detectAttachmentType(file.type),
-      size: file.size,
+      mimeType,
+      attachmentType: detectAttachmentType(mimeType),
+      size,
     },
   })
 
