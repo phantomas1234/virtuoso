@@ -150,7 +150,10 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
     } else if (newSpeed !== 1) {
       // Lazy init on first non-1× selection
       initAudio()
-      audioCtxRef.current?.resume()
+      // Cast breaks TypeScript's narrowing: inside this else-branch TS narrows
+      // audioCtxRef.current to null, but initAudio() just set it to AudioContext.
+      const ctx = audioCtxRef.current as AudioContext | null
+      ctx?.resume()
     }
   }
 
