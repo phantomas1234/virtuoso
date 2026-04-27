@@ -1,0 +1,15 @@
+Drum Samples — Credits & Licenses
+===================================
+
+kick.wav, snare.wav, rimshot.wav, crash.wav, ride.wav,
+tom_high.wav, tom_mid.wav, tom_low.wav
+  Source:  The Open Source Drumkit
+  URL:     https://github.com/crabacus/the-open-source-drumkit
+  License: Public Domain (no copyright)
+  Notes:   No attribution required.
+
+hihat_closed.wav, hihat_open.wav
+  Source:  Synthetically generated (no copyright)
+  License: Public Domain
+  Notes:   Generated programmatically; replaced if the Open Source
+           Drumkit adds hihat samples in the future.

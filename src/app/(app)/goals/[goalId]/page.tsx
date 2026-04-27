@@ -22,7 +22,10 @@ export default async function GoalDetailPage({ params }: { params: Promise<{ goa
     where: { id: goalId },
     include: {
       progressEntries: { orderBy: { date: "asc" } },
-      attachments: { orderBy: { createdAt: "asc" } },
+      attachments: {
+        orderBy: { createdAt: "asc" },
+        include: { drumScore: true },
+      },
     },
   })
 
