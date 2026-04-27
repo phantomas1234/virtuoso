@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { del } from "@vercel/blob"
+import { DeleteObjectCommand } from "@aws-sdk/client-s3"
+import { r2, R2_BUCKET } from "@/lib/r2"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 
@@ -23,10 +24,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<Par
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  try {
-    await del(attachment.url)
-  } catch {
-    // Continue even if blob deletion fails
+  if (attachment.fileKey) {
+    try {
+      await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: attachment.fileKey }))
+    } catch {
+      // Continue even if R2 deletion fails
+    }
   }
 
   await prisma.attachment.delete({ where: { id: attachmentId } })

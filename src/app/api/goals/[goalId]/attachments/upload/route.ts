@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { put } from "@vercel/blob"
+import { PutObjectCommand } from "@aws-sdk/client-s3"
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from "@/lib/r2"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import type { AttachmentType } from "@prisma/client"
@@ -30,18 +31,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
     return NextResponse.json({ error: "File too large (max 256 MB)" }, { status: 413 })
   }
 
-  const blob = await put(`goals/${goalId}/${file.name}`, file, {
-    access: "public",
-    addRandomSuffix: true,
-  })
+  const ext = file.name.includes(".") ? file.name.split(".").pop() : ""
+  const key = `goals/${goalId}/${crypto.randomUUID()}${ext ? `.${ext}` : ""}`
+
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: Buffer.from(await file.arrayBuffer()),
+      ContentType: file.type || "application/octet-stream",
+    })
+  )
+
+  const url = `${R2_PUBLIC_URL}/${key}`
 
   const attachment = await prisma.attachment.create({
     data: {
       goalId,
       userId: session.user.id,
       name: file.name,
-      url: blob.url,
-      fileKey: blob.pathname,
+      url,
+      fileKey: key,
       mimeType: file.type || "application/octet-stream",
       attachmentType: detectAttachmentType(file.type),
       size: file.size,
