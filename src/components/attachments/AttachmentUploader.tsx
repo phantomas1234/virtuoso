@@ -28,8 +28,10 @@ export function AttachmentUploader({ goalId }: AttachmentUploaderProps) {
           body: JSON.stringify({ fileName: file.name, contentType: file.type, size: file.size }),
         })
         if (!presignRes.ok) {
-          const { error } = await presignRes.json()
-          toast.error(error ?? `Failed to upload ${file.name}`)
+          const text = await presignRes.text()
+          let message = `Failed to upload ${file.name}`
+          try { message = JSON.parse(text).error ?? message } catch { /* non-JSON error page */ }
+          toast.error(message)
           continue
         }
         const { uploadUrl, key } = await presignRes.json()
