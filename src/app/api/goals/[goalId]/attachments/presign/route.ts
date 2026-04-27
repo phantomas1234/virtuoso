@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
 
     const ext = fileName.includes(".") ? fileName.split(".").pop() : ""
     const key = `goals/${goalId}/${crypto.randomUUID()}${ext ? `.${ext}` : ""}`
-    const uploadUrl = await getPresignedUploadUrl(key, contentType)
+    const uploadUrl = await getPresignedUploadUrl(key)
 
     return NextResponse.json({ uploadUrl, key })
   } catch (err) {
