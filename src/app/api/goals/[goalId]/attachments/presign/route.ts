@@ -21,9 +21,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
 
     const ext = fileName.includes(".") ? fileName.split(".").pop() : ""
     const key = `goals/${goalId}/${crypto.randomUUID()}${ext ? `.${ext}` : ""}`
-    const uploadUrl = await getPresignedUploadUrl(key)
+    const uploadUrl = await getPresignedUploadUrl(key, contentType)
 
-    return NextResponse.json({ uploadUrl, key })
+    return NextResponse.json({ uploadUrl, key, contentType })
   } catch (err) {
     console.error("[presign] error:", err)
     return NextResponse.json(

@@ -25,7 +25,7 @@ export function AttachmentUploader({ goalId }: AttachmentUploaderProps) {
         const presignRes = await fetch(`/api/goals/${goalId}/attachments/presign`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name, contentType: file.type, size: file.size }),
+          body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size }),
         })
         if (!presignRes.ok) {
           const text = await presignRes.text()
@@ -34,12 +34,12 @@ export function AttachmentUploader({ goalId }: AttachmentUploaderProps) {
           toast.error(message)
           continue
         }
-        const { uploadUrl, key } = await presignRes.json()
+        const { uploadUrl, key, contentType: signedContentType } = await presignRes.json()
 
         // Step 2: upload directly to R2 (bypasses Vercel body size limits)
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
-          headers: { "Content-Type": file.type },
+          headers: { "Content-Type": signedContentType },
           body: file,
         })
         if (!uploadRes.ok) {

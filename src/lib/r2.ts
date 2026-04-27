@@ -16,6 +16,10 @@ export function getSignedUrl(key: string, expiresIn = 3600) {
   return awsGetSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }), { expiresIn })
 }
 
-export function getPresignedUploadUrl(key: string, expiresIn = 3600) {
-  return awsGetSignedUrl(r2, new PutObjectCommand({ Bucket: R2_BUCKET, Key: key }), { expiresIn })
+export function getPresignedUploadUrl(key: string, contentType: string, expiresIn = 3600) {
+  return awsGetSignedUrl(
+    r2,
+    new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType }),
+    { expiresIn }
+  )
 }
