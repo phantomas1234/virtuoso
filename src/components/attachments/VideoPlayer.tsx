@@ -51,6 +51,8 @@ class StreamingSource {
       interleaved[i * 2] = inL[i]
       interleaved[i * 2 + 1] = inR[i]
     }
+    // Cap at ~10 chunks (~500ms at 48kHz) to prevent unbounded growth if processing falls behind
+    if (this.queue.length > 10) this.queue.shift()
     this.queue.push(interleaved)
   }
 
@@ -62,7 +64,6 @@ class StreamingSource {
 
 interface VideoPlayerProps {
   url: string
-  name?: string
 }
 
 export function VideoPlayer({ url }: VideoPlayerProps) {
@@ -77,7 +78,6 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const streamingSourceRef = useRef<StreamingSource | null>(null)
   const filterRef = useRef<SimpleFilter | null>(null)
-  const soundTouchRef = useRef<SoundTouch | null>(null)
   const outputSamplesRef = useRef<Float32Array>(new Float32Array(BUFFER_SIZE * 2))
 
   // Replace the SoundTouch + SimpleFilter pair (called on speed change and on
@@ -88,7 +88,6 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
     const st = new SoundTouch()
     st.pitchSemitones = semitones
     st.tempo = 1
-    soundTouchRef.current = st
     filterRef.current = new SimpleFilter(src, st)
   }
 
@@ -108,7 +107,6 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
     const st = new SoundTouch()
     st.pitchSemitones = pitchCorrectionSemitones(speedRef.current)
     st.tempo = 1
-    soundTouchRef.current = st
     filterRef.current = new SimpleFilter(streamingSrc, st)
 
     const processor = ctx.createScriptProcessor(BUFFER_SIZE, 2, 2)

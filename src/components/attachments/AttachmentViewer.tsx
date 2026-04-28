@@ -14,7 +14,7 @@ export function AttachmentViewer({ url, name, attachmentType }: AttachmentViewer
       return <PdfViewer url={url} name={name} />
 
     case "VIDEO":
-      return <VideoPlayer url={url} name={name} />
+      return <VideoPlayer url={url} />
 
     case "IMAGE":
       return (
