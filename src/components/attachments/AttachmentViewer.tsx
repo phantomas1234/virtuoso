@@ -1,4 +1,5 @@
 import { PdfViewer } from "./PdfViewer"
+import { VideoPlayer } from "./VideoPlayer"
 import type { AttachmentType } from "@prisma/client"
 
 interface AttachmentViewerProps {
@@ -13,18 +14,7 @@ export function AttachmentViewer({ url, name, attachmentType }: AttachmentViewer
       return <PdfViewer url={url} name={name} />
 
     case "VIDEO":
-      return (
-        <div className="overflow-hidden rounded-lg border">
-          <video
-            src={url}
-            controls
-            className="w-full"
-            style={{ maxHeight: "480px" }}
-          >
-            <track kind="captions" />
-          </video>
-        </div>
-      )
+      return <VideoPlayer url={url} />
 
     case "IMAGE":
       return (
