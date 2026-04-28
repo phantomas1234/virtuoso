@@ -1,65 +1,13 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { SoundTouch, SimpleFilter } from "soundtouchjs"
 import { Button } from "@/components/ui/button"
 
 const SPEEDS = [0.5, 0.6, 0.7, 0.8, 0.9, 1] as const
 type Speed = (typeof SPEEDS)[number]
 
-const BUFFER_SIZE = 4096
-
-// Pitch correction in semitones needed to undo the pitch change caused by
-// video.playbackRate. At 0.5× the browser drops pitch by 12 semitones, so we
-// raise it by 12; at 0.75× we raise by ~4.98; at 1× no correction needed.
 export function pitchCorrectionSemitones(speed: number): number {
   return -12 * Math.log2(speed)
-}
-
-// Ring-buffer source that bridges MediaElementAudioSourceNode (push) with
-// soundtouchjs SimpleFilter (pull). ScriptProcessorNode pushes interleaved
-// PCM in; SimpleFilter.extract() pulls it out.
-class StreamingSource {
-  private queue: Float32Array[] = []
-  position = 0
-
-  extract(target: Float32Array, numFrames: number): number {
-    let written = 0
-    while (written < numFrames && this.queue.length > 0) {
-      const chunk = this.queue[0]
-      const chunkFrames = chunk.length / 2
-      const take = Math.min(numFrames - written, chunkFrames)
-      for (let i = 0; i < take; i++) {
-        target[(written + i) * 2] = chunk[i * 2]
-        target[(written + i) * 2 + 1] = chunk[i * 2 + 1]
-      }
-      if (take === chunkFrames) {
-        this.queue.shift()
-      } else {
-        this.queue[0] = chunk.slice(take * 2)
-      }
-      written += take
-    }
-    this.position += written
-    return written
-  }
-
-  push(inL: Float32Array, inR: Float32Array) {
-    const n = inL.length
-    const interleaved = new Float32Array(n * 2)
-    for (let i = 0; i < n; i++) {
-      interleaved[i * 2] = inL[i]
-      interleaved[i * 2 + 1] = inR[i]
-    }
-    // Cap at ~10 chunks (~500ms at 48kHz) to prevent unbounded growth if processing falls behind
-    if (this.queue.length > 10) this.queue.shift()
-    this.queue.push(interleaved)
-  }
-
-  flush() {
-    this.queue = []
-    this.position = 0
-  }
 }
 
 interface VideoPlayerProps {
@@ -70,70 +18,39 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
   const [speed, setSpeed] = useState<Speed>(1)
 
   const videoRef = useRef<HTMLVideoElement>(null)
-  const speedRef = useRef<Speed>(1) // readable inside audio callbacks without stale closure
-
-  // Web Audio API — all lazily created on first non-1× activation
+  const speedRef = useRef<Speed>(1)
   const audioCtxRef = useRef<AudioContext | null>(null)
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const streamingSourceRef = useRef<StreamingSource | null>(null)
-  const filterRef = useRef<SimpleFilter | null>(null)
-  const outputSamplesRef = useRef<Float32Array>(new Float32Array(BUFFER_SIZE * 2))
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
 
-  // Replace the SoundTouch + SimpleFilter pair (called on speed change and on
-  // seek) while reusing the same streaming source and processor node.
-  function rebuildFilter(semitones: number) {
-    const src = streamingSourceRef.current!
-    src.flush()
-    const st = new SoundTouch()
-    st.pitchSemitones = semitones
-    st.tempo = 1
-    filterRef.current = new SimpleFilter(src, st)
-  }
-
-  function initAudio() {
+  async function initAudio(semitones: number) {
     if (audioCtxRef.current) return
 
     const video = videoRef.current!
+    video.preservesPitch = false
+
     const ctx = new AudioContext()
     audioCtxRef.current = ctx
+
+    try {
+      await ctx.audioWorklet.addModule("/pitch-processor.worklet.js")
+    } catch (err) {
+      console.error("AudioWorklet load failed:", err)
+      return
+    }
 
     const source = ctx.createMediaElementSource(video)
     sourceNodeRef.current = source
 
-    const streamingSrc = new StreamingSource()
-    streamingSourceRef.current = streamingSrc
+    const worklet = new AudioWorkletNode(ctx, "pitch-processor")
+    workletNodeRef.current = worklet
 
-    const st = new SoundTouch()
-    st.pitchSemitones = pitchCorrectionSemitones(speedRef.current)
-    st.tempo = 1
-    filterRef.current = new SimpleFilter(streamingSrc, st)
+    worklet.port.postMessage({ type: "pitch", semitones })
 
-    const processor = ctx.createScriptProcessor(BUFFER_SIZE, 2, 2)
-    processorRef.current = processor
+    source.connect(worklet)
+    worklet.connect(ctx.destination)
 
-    processor.onaudioprocess = (e) => {
-      streamingSrc.push(
-        e.inputBuffer.getChannelData(0),
-        e.inputBuffer.getChannelData(1),
-      )
-      const filter = filterRef.current
-      if (!filter) return
-      const extracted = filter.extract(outputSamplesRef.current, BUFFER_SIZE)
-      const outL = e.outputBuffer.getChannelData(0)
-      const outR = e.outputBuffer.getChannelData(1)
-      for (let i = 0; i < extracted; i++) {
-        outL[i] = outputSamplesRef.current[i * 2]
-        outR[i] = outputSamplesRef.current[i * 2 + 1]
-      }
-      for (let i = extracted; i < BUFFER_SIZE; i++) {
-        outL[i] = 0
-        outR[i] = 0
-      }
-    }
-
-    source.connect(processor)
-    processor.connect(ctx.destination)
+    await ctx.resume()
   }
 
   function handleSpeedChange(newSpeed: Speed) {
@@ -141,17 +58,13 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
     setSpeed(newSpeed)
     videoRef.current!.playbackRate = newSpeed
 
+    const semitones = pitchCorrectionSemitones(newSpeed)
+
     if (audioCtxRef.current) {
-      // Audio already initialised — just update the pitch correction
-      rebuildFilter(pitchCorrectionSemitones(newSpeed))
-      if (newSpeed !== 1) audioCtxRef.current.resume()
+      workletNodeRef.current?.port.postMessage({ type: "pitch", semitones })
+      audioCtxRef.current.resume()
     } else if (newSpeed !== 1) {
-      // Lazy init on first non-1× selection
-      initAudio()
-      // Cast breaks TypeScript's narrowing: inside this else-branch TS narrows
-      // audioCtxRef.current to null, but initAudio() just set it to AudioContext.
-      const ctx = audioCtxRef.current as AudioContext | null
-      ctx?.resume()
+      initAudio(semitones)
     }
   }
 
@@ -163,14 +76,10 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
     return () => video.removeEventListener("play", onPlay)
   }, [])
 
-  // Flush SoundTouch on seek to clear stale samples and avoid a glitch
+  // Flush SoundTouch buffer on seek to avoid stale samples
   useEffect(() => {
     const video = videoRef.current!
-    const onSeeking = () => {
-      if (audioCtxRef.current) {
-        rebuildFilter(pitchCorrectionSemitones(speedRef.current))
-      }
-    }
+    const onSeeking = () => workletNodeRef.current?.port.postMessage({ type: "flush" })
     video.addEventListener("seeking", onSeeking)
     return () => video.removeEventListener("seeking", onSeeking)
   }, [])
@@ -178,7 +87,7 @@ export function VideoPlayer({ url }: VideoPlayerProps) {
   // Tear down Web Audio graph on unmount
   useEffect(() => {
     return () => {
-      processorRef.current?.disconnect()
+      workletNodeRef.current?.disconnect()
       sourceNodeRef.current?.disconnect()
       audioCtxRef.current?.close()
     }
