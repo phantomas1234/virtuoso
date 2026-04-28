@@ -1,20 +1,22 @@
 import { PdfViewer } from "./PdfViewer"
-import type { Attachment } from "@prisma/client"
+import type { AttachmentType } from "@prisma/client"
 
 interface AttachmentViewerProps {
-  attachment: Attachment
+  url: string
+  name: string
+  attachmentType: AttachmentType
 }
 
-export function AttachmentViewer({ attachment }: AttachmentViewerProps) {
-  switch (attachment.attachmentType) {
+export function AttachmentViewer({ url, name, attachmentType }: AttachmentViewerProps) {
+  switch (attachmentType) {
     case "PDF":
-      return <PdfViewer url={attachment.url} name={attachment.name} />
+      return <PdfViewer url={url} name={name} />
 
     case "VIDEO":
       return (
         <div className="overflow-hidden rounded-lg border">
           <video
-            src={attachment.url}
+            src={url}
             controls
             className="w-full"
             style={{ maxHeight: "480px" }}
@@ -29,8 +31,8 @@ export function AttachmentViewer({ attachment }: AttachmentViewerProps) {
         <div className="overflow-hidden rounded-lg border">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={attachment.url}
-            alt={attachment.name}
+            src={url}
+            alt={name}
             className="w-full object-contain"
             style={{ maxHeight: "480px" }}
           />
@@ -40,8 +42,8 @@ export function AttachmentViewer({ attachment }: AttachmentViewerProps) {
     case "AUDIO":
       return (
         <div className="flex flex-col gap-2 rounded-lg border p-4">
-          <span className="text-sm font-medium">{attachment.name}</span>
-          <audio src={attachment.url} controls className="w-full">
+          <span className="text-sm font-medium">{name}</span>
+          <audio src={url} controls className="w-full">
             <track kind="captions" />
           </audio>
         </div>
@@ -50,12 +52,12 @@ export function AttachmentViewer({ attachment }: AttachmentViewerProps) {
     default:
       return (
         <a
-          href={attachment.url}
+          href={url}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-lg border p-3 text-sm hover:bg-muted"
         >
-          {attachment.name}
+          {name}
         </a>
       )
   }
