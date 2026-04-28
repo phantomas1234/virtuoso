@@ -8,6 +8,16 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import type { GoalType } from "@prisma/client"
 
 type ProgressEntry = {
@@ -40,6 +50,7 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editState, setEditState] = useState<EditState>({ bpm: "", note: "", date: "" })
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   if (entries.length === 0) return null
 
@@ -74,6 +85,7 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
 
   const deleteEntry = async (entryId: string) => {
     setDeletingId(entryId)
+    setConfirmDeleteId(null)
     try {
       const res = await fetch(`/api/goals/${goalId}/progress/${entryId}`, { method: "DELETE" })
       if (!res.ok) throw new Error()
@@ -87,7 +99,8 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="flex flex-col gap-0">
+      <div className="overflow-hidden rounded-lg border">
       <table className="w-full text-sm">
         <thead className="bg-muted/50">
           <tr>
@@ -100,7 +113,7 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
         </thead>
         <tbody className="divide-y">
           {[...entries].reverse().map((entry) => (
-            <tr key={entry.id} className="hover:bg-muted/30">
+            <tr key={entry.id} className="group hover:bg-muted/30">
               {editingId === entry.id ? (
                 <>
                   <td className="px-4 py-2">
@@ -162,7 +175,7 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
                   )}
                   <td className="px-4 py-2 text-muted-foreground">{entry.note ?? "—"}</td>
                   <td className="px-4 py-2">
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100">
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(entry)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -170,7 +183,7 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => deleteEntry(entry.id)}
+                        onClick={() => setConfirmDeleteId(entry.id)}
                         disabled={deletingId === entry.id}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -183,6 +196,25 @@ export function ProgressHistory({ entries, goalId, goalType, splitHands }: Progr
           ))}
         </tbody>
       </table>
+      </div>
+
+    <AlertDialog open={confirmDeleteId !== null} onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete session?</AlertDialogTitle>
+          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => confirmDeleteId && deleteEntry(confirmDeleteId)}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </div>
   )
 }
