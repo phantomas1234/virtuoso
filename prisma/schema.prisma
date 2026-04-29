@@ -3,11 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  // directUrl uses the non-pooling connection for migrations.
-  // PgBouncer (used by Neon's pooled URL) blocks the advisory locks
-  // that `prisma migrate deploy` requires.
-  directUrl = env("POSTGRES_URL_NON_POOLING")
+  provider = "postgresql"
 }
 
 model Account {
