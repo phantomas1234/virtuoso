@@ -1,4 +1,4 @@
 {
-  "buildCommand": "npx prisma generate && POSTGRES_PRISMA_URL=$POSTGRES_URL_NON_POOLING npx prisma migrate deploy && next build",
+  "buildCommand": "npx prisma generate && sh scripts/migrate.sh && next build",
   "framework": "nextjs"
 }
