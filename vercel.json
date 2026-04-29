@@ -1,4 +1,4 @@
 {
-  "buildCommand": "npx prisma generate && next build",
+  "buildCommand": "npx prisma generate && sh scripts/migrate.sh && next build",
   "framework": "nextjs"
 }
