@@ -22,12 +22,23 @@ export default async function GoalDetailPage({ params }: { params: Promise<{ goa
     where: { id: goalId },
     include: {
       progressEntries: { orderBy: { date: "asc" } },
-      attachments: {
-        orderBy: { createdAt: "asc" },
-        include: { drumScore: true },
-      },
+      attachments: { orderBy: { createdAt: "asc" } },
     },
   })
+
+  // Fetch drum scores separately so a missing migration doesn't crash the page
+  const drumScoreMap: Record<string, import("@prisma/client").DrumScore> = {}
+  try {
+    const scores = await prisma.drumScore.findMany({ where: { goalId } })
+    for (const s of scores) drumScoreMap[s.attachmentId] = s
+  } catch {
+    // DrumScore table not yet migrated — drum player will be unavailable
+  }
+
+  const attachmentsWithScores = goal?.attachments.map((a) => ({
+    ...a,
+    drumScore: drumScoreMap[a.id] ?? null,
+  }))
 
   if (!goal) notFound()
   if (goal.userId !== session!.user!.id) notFound()
@@ -160,7 +171,7 @@ export default async function GoalDetailPage({ params }: { params: Promise<{ goa
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Attachments</h2>
           <AttachmentUploader goalId={goal.id} />
         </div>
-        <AttachmentList attachments={goal.attachments} goalId={goal.id} />
+        <AttachmentList attachments={attachmentsWithScores ?? []} goalId={goal.id} />
       </section>
     </div>
   )
