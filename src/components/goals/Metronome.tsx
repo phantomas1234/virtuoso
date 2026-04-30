@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button"
 
 interface MetronomeProps {
   defaultBpm?: number
+  onStart?: (bpm: number, startPerfTime: number) => void
+  onStop?: () => void
 }
 
-export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
+export function Metronome({ defaultBpm = 120, onStart, onStop }: MetronomeProps) {
   const [bpm, setBpm] = useState(Math.min(240, Math.max(40, defaultBpm)))
   const [isPlaying, setIsPlaying] = useState(false)
   const [flash, setFlash] = useState(false)
@@ -52,6 +54,11 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
 
   useEffect(() => { schedulerRef.current = scheduler }, [scheduler])
 
+  const onStartRef = useRef(onStart)
+  const onStopRef = useRef(onStop)
+  useEffect(() => { onStartRef.current = onStart }, [onStart])
+  useEffect(() => { onStopRef.current = onStop }, [onStop])
+
   const start = useCallback(() => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new AudioContext()
@@ -61,7 +68,9 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
     nextBeatTimeRef.current = ctx.currentTime
     isPlayingRef.current = true
     setIsPlaying(true)
+    const perfNow = performance.now()
     scheduler()
+    onStartRef.current?.(bpmRef.current, perfNow)
   }, [scheduler])
 
   const stop = useCallback(() => {
@@ -69,6 +78,7 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
     if (timerRef.current) clearTimeout(timerRef.current)
     setIsPlaying(false)
     setFlash(false)
+    onStopRef.current?.()
   }, [])
 
   useEffect(() => () => { isPlayingRef.current = false; if (timerRef.current) clearTimeout(timerRef.current) }, [])

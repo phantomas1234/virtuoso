@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { GoalType, ProgressEntry } from "@prisma/client"
+import type { SessionStats } from "@/components/goals/DrumRecorder"
 
 const schema = z.object({
   bpm: z.number().int().positive().optional(),
@@ -25,10 +26,11 @@ interface ProgressEntryFormProps {
   goalId: string
   goalType: GoalType
   splitHands?: boolean
+  accuracyStats?: SessionStats | null
   onSuccess: (entry: ProgressEntry, goalAccomplished: boolean) => void
 }
 
-export function ProgressEntryForm({ goalId, goalType, splitHands, onSuccess }: ProgressEntryFormProps) {
+export function ProgressEntryForm({ goalId, goalType, splitHands, accuracyStats, onSuccess }: ProgressEntryFormProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const {
@@ -47,7 +49,16 @@ export function ProgressEntryForm({ goalId, goalType, splitHands, onSuccess }: P
       const res = await fetch(`/api/goals/${goalId}/progress`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          ...(accuracyStats
+            ? {
+                avgDeviationMs: accuracyStats.avgDeviationMs,
+                deviationStdMs: accuracyStats.deviationStdMs,
+                hitCount: accuracyStats.hitCount,
+              }
+            : {}),
+        }),
       })
 
       if (!res.ok) {
@@ -115,6 +126,28 @@ export function ProgressEntryForm({ goalId, goalType, splitHands, onSuccess }: P
           <Input id="date" type="date" className="w-36" {...register("date")} />
         </div>
       </div>
+      {accuracyStats && (
+        <div className="rounded-md border bg-muted/40 px-3 py-2 space-y-0.5">
+          <p className="text-xs font-medium text-muted-foreground">Timing accuracy from last recording</p>
+          <div className="flex gap-4 text-xs font-mono">
+            <span>
+              Avg:{" "}
+              <span className={
+                Math.abs(accuracyStats.avgDeviationMs) < 15
+                  ? "text-green-500"
+                  : Math.abs(accuracyStats.avgDeviationMs) < 30
+                  ? "text-amber-500"
+                  : "text-red-500"
+              }>
+                {accuracyStats.avgDeviationMs > 0 ? "+" : ""}
+                {accuracyStats.avgDeviationMs.toFixed(1)} ms
+              </span>
+            </span>
+            <span>Std: ±{accuracyStats.deviationStdMs.toFixed(1)} ms</span>
+            <span>Hits: {accuracyStats.hitCount}</span>
+          </div>
+        </div>
+      )}
       <div className="space-y-1">
         <Label htmlFor="note" className="text-xs">Notes (optional)</Label>
         <Textarea id="note" placeholder="What went well? What to work on?" rows={2} {...register("note")} />
