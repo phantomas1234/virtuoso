@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { PracticeSection } from "@/components/goals/PracticeSection"
 import { ProgressEntryForm } from "@/components/progress/ProgressEntryForm"
 import { ProgressHistory } from "@/components/progress/ProgressHistory"
 import { ConfettiTrigger } from "@/components/shared/ConfettiCannon"
@@ -23,12 +24,28 @@ export function GoalDetailClient({ goal }: GoalDetailClientProps) {
   return (
     <div className="space-y-4">
       <ConfettiTrigger trigger={celebrate} />
-      <ProgressEntryForm
-        goalId={goal.id}
-        goalType={goal.goalType}
-        splitHands={goal.splitHands}
-        onSuccess={handleProgressSuccess}
-      />
+
+      {goal.goalType === "BPM" ? (
+        <PracticeSection
+          defaultBpm={
+            goal.progressEntries.at(-1)?.bpm ??
+            goal.targetBpm ??
+            120
+          }
+          goalId={goal.id}
+          goalType={goal.goalType}
+          splitHands={goal.splitHands}
+          onEntryAdded={handleProgressSuccess}
+        />
+      ) : (
+        <ProgressEntryForm
+          goalId={goal.id}
+          goalType={goal.goalType}
+          splitHands={goal.splitHands}
+          onSuccess={handleProgressSuccess}
+        />
+      )}
+
       <ProgressHistory
         entries={goal.progressEntries}
         goalId={goal.id}

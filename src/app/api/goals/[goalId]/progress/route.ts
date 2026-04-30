@@ -8,6 +8,9 @@ const createEntrySchema = z.object({
   hand: z.enum(["LEFT", "RIGHT"]).optional(),
   note: z.string().optional(),
   date: z.string().optional(),
+  avgDeviationMs: z.number().optional(),
+  deviationStdMs: z.number().optional(),
+  hitCount: z.number().int().nonnegative().optional(),
 })
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ goalId: string }> }) {
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
   const parsed = createEntrySchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { bpm, hand, note, date } = parsed.data
+  const { bpm, hand, note, date, avgDeviationMs, deviationStdMs, hitCount } = parsed.data
 
   const entry = await prisma.progressEntry.create({
     data: {
@@ -49,6 +52,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ goa
       hand: goal.splitHands ? (hand ?? null) : null,
       note,
       date: date ? new Date(date) : new Date(),
+      avgDeviationMs: avgDeviationMs ?? null,
+      deviationStdMs: deviationStdMs ?? null,
+      hitCount: hitCount ?? null,
     },
   })
 
