@@ -106,23 +106,21 @@ export function GoalForm({ goal }: GoalFormProps) {
         />
       </div>
 
-      {!isEdit && (
-        <div className="space-y-2">
-          <Label>Goal type</Label>
-          <Select
-            value={goalType}
-            onValueChange={(v) => setValue("goalType", v as "BPM" | "OPEN")}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="BPM">BPM — track tempo progress with a chart</SelectItem>
-              <SelectItem value="OPEN">Open — freeform, mark complete manually</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="space-y-2">
+        <Label>Goal type</Label>
+        <Select
+          value={goalType}
+          onValueChange={(v) => setValue("goalType", v as "BPM" | "OPEN")}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="BPM">BPM — track tempo progress with a chart</SelectItem>
+            <SelectItem value="OPEN">Open — freeform, mark complete manually</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {goalType === "BPM" && (
         <div className="space-y-2">
