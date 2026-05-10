@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Mic, Piano, Play, Square } from "lucide-react"
+import { Piano, Play, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 
@@ -11,6 +11,7 @@ export type QuantMode =
   | "1/4" | "1/8" | "1/16" | "1/32"
   | "1/4T" | "1/8T" | "1/16T"
   | "1/8S" | "1/16S"
+  | "1/8+T" | "1/16+T"
 
 export interface SessionStats {
   avgDeviationMs: number
@@ -18,9 +19,23 @@ export interface SessionStats {
   hitCount: number
 }
 
+interface DrumLane {
+  note: number
+  label: string
+  color: string
+  order: number
+}
+
 interface HitRecord {
-  deviationMs: number  // negative = early, positive = late
-  timestamp: number    // performance.now()
+  note: number
+  deviationMs: number
+  timestamp: number
+}
+
+interface GhHit {
+  note: number
+  deviationMs: number
+  arrivedAt: number
 }
 
 interface DrumRecorderProps {
@@ -28,9 +43,51 @@ interface DrumRecorderProps {
   isMetronomePlaying: boolean
   gridStartTime: number | null
   onSessionEnd: (stats: SessionStats) => void
+  onRequestStart?: () => void
+  onRequestStop?: () => void
 }
 
-// ── Quantization helpers ─────────────────────────────────────────────────────
+// ── GM drum map ───────────────────────────────────────────────────────────────
+
+const GM_DRUMS: Record<number, { label: string; order: number }> = {
+  35: { label: "Kick 2",     order: 0 },
+  36: { label: "Kick",       order: 1 },
+  37: { label: "Rim",        order: 2 },
+  38: { label: "Snare",      order: 3 },
+  39: { label: "Clap",       order: 4 },
+  40: { label: "Snare 2",    order: 5 },
+  41: { label: "Low Tom",    order: 6 },
+  42: { label: "Hi-Hat",     order: 7 },
+  43: { label: "High Tom",   order: 8 },
+  44: { label: "Pedal HH",   order: 9 },
+  45: { label: "Mid Tom",    order: 10 },
+  46: { label: "Open HH",    order: 11 },
+  47: { label: "Mid Tom 2",  order: 12 },
+  48: { label: "Hi Tom 2",   order: 13 },
+  49: { label: "Crash",      order: 14 },
+  50: { label: "Hi Tom 3",   order: 15 },
+  51: { label: "Ride",       order: 16 },
+  52: { label: "China",      order: 17 },
+  53: { label: "Ride Bell",  order: 18 },
+  54: { label: "Tambourine", order: 19 },
+  55: { label: "Splash",     order: 20 },
+  56: { label: "Cowbell",    order: 21 },
+  57: { label: "Crash 2",    order: 22 },
+  59: { label: "Ride 2",     order: 23 },
+}
+
+const LANE_COLORS = [
+  "#60a5fa", // blue
+  "#f472b6", // pink
+  "#34d399", // green
+  "#fb923c", // orange
+  "#a78bfa", // purple
+  "#facc15", // yellow
+  "#22d3ee", // cyan
+  "#f87171", // red
+]
+
+// ── Quantization helpers ──────────────────────────────────────────────────────
 
 function subdivMs(mode: QuantMode, bpm: number): number {
   const beat = 60000 / bpm
@@ -44,7 +101,13 @@ function subdivMs(mode: QuantMode, bpm: number): number {
     case "1/16T": return beat / 6
     case "1/8S":  return beat / 2
     case "1/16S": return beat / 4
+    case "1/8+T": return beat / 2   // primary grid for canvas scroll
+    case "1/16+T": return beat / 4
   }
+}
+
+function nearestOnGrid(elapsed: number, sub: number): number {
+  return Math.round(elapsed / sub) * sub
 }
 
 function calcDeviation(
@@ -55,6 +118,20 @@ function calcDeviation(
   swingRatio: number,
 ): number {
   const elapsed = hitTime - gridStart
+  const beat = 60000 / bpm
+
+  // Nearest-grid modes: snap to whichever of two grids is closer
+  if (mode === "1/8+T") {
+    const dev8  = elapsed - nearestOnGrid(elapsed, beat / 2)
+    const devT  = elapsed - nearestOnGrid(elapsed, beat / 3)
+    return Math.abs(dev8) <= Math.abs(devT) ? dev8 : devT
+  }
+  if (mode === "1/16+T") {
+    const dev16 = elapsed - nearestOnGrid(elapsed, beat / 4)
+    const devT  = elapsed - nearestOnGrid(elapsed, beat / 6)
+    return Math.abs(dev16) <= Math.abs(devT) ? dev16 : devT
+  }
+
   const sub = subdivMs(mode, bpm)
 
   if (mode === "1/8S" || mode === "1/16S") {
@@ -74,296 +151,388 @@ function calcDeviation(
 // ── Color helpers ─────────────────────────────────────────────────────────────
 
 function deviationColor(absMs: number): string {
-  if (absMs < 15) return "#22c55e"   // green-500
-  if (absMs < 30) return "#f59e0b"   // amber-500
-  return "#ef4444"                    // red-500
+  if (absMs < 20) return "#22c55e"
+  if (absMs < 40) return "#f59e0b"
+  return "#ef4444"
 }
 
-// ── Guitar Hero Canvas ────────────────────────────────────────────────────────
+// ── Canvas constants ──────────────────────────────────────────────────────────
 
-const CANVAS_W = 320
-const CANVAS_H = 200
-const LANE_W = 40
-const HIT_ZONE_Y = CANVAS_H - 30
-const SCROLL_PX_PER_MS = 0.12  // how fast subdivision lines scroll upward
-const HIT_FADE_MS = 2500        // how long a hit stays visible
+const CANVAS_W = 500
+const LABEL_W = 72
+const LANE_H = 16
+const LANE_GAP = 4
+const TOP_PAD = 8
+const BOT_PAD = 8
+const HIT_ZONE_X = CANVAS_W - 50
+const SCROLL_PX_PER_MS = 0.12
+const HIT_FADE_MS = 2500
 
-interface GhHit {
-  deviationMs: number
-  arrivedAt: number  // performance.now() when it was recorded
+function canvasH(numLanes: number): number {
+  const n = Math.max(1, numLanes)
+  return TOP_PAD + n * LANE_H + (n - 1) * LANE_GAP + BOT_PAD
 }
+
+function laneTop(idx: number): number {
+  return TOP_PAD + idx * (LANE_H + LANE_GAP)
+}
+
+// ── Canvas draw ───────────────────────────────────────────────────────────────
 
 function drawGrid(
   ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
   now: number,
-  hits: GhHit[],
+  ghHits: GhHit[],
+  lanes: DrumLane[],
   bpm: number,
   mode: QuantMode,
   gridStart: number | null,
 ) {
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
-
-  // Background
+  ctx.clearRect(0, 0, cw, ch)
   ctx.fillStyle = "#0f0f14"
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+  ctx.fillRect(0, 0, cw, ch)
 
-  // Lane background
-  const laneX = CANVAS_W / 2 - LANE_W / 2
-  ctx.fillStyle = "#1a1a26"
-  ctx.fillRect(laneX, 0, LANE_W, CANVAS_H)
+  if (lanes.length === 0) {
+    ctx.fillStyle = "rgba(148,148,184,0.3)"
+    ctx.font = "11px system-ui, sans-serif"
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    ctx.fillText("Play any drum pad to create a lane", cw / 2, ch / 2)
+    return
+  }
 
-  // Lane borders
+  const totalBottom = ch - BOT_PAD
+
+  // Lane backgrounds + labels
+  for (let i = 0; i < lanes.length; i++) {
+    const lane = lanes[i]
+    const y = laneTop(i)
+
+    // Timeline background
+    ctx.fillStyle = "#1a1a26"
+    ctx.fillRect(LABEL_W, y, cw - LABEL_W, LANE_H)
+
+    // Lane border lines
+    ctx.strokeStyle = "#333355"
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(LABEL_W, y); ctx.lineTo(cw, y)
+    ctx.moveTo(LABEL_W, y + LANE_H); ctx.lineTo(cw, y + LANE_H)
+    ctx.stroke()
+
+    // Label column background
+    ctx.fillStyle = "#12121c"
+    ctx.fillRect(0, y, LABEL_W, LANE_H)
+
+    // Color dot
+    ctx.fillStyle = lane.color
+    ctx.beginPath()
+    ctx.arc(10, y + LANE_H / 2, 4, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Label text
+    ctx.fillStyle = "#9494b8"
+    ctx.font = "10px system-ui, sans-serif"
+    ctx.textAlign = "left"
+    ctx.textBaseline = "middle"
+    ctx.fillText(lane.label, 20, y + LANE_H / 2)
+  }
+
+  // Vertical separator between label column and timeline
   ctx.strokeStyle = "#333355"
   ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(laneX, 0); ctx.lineTo(laneX, CANVAS_H)
-  ctx.moveTo(laneX + LANE_W, 0); ctx.lineTo(laneX + LANE_W, CANVAS_H)
+  ctx.moveTo(LABEL_W, TOP_PAD)
+  ctx.lineTo(LABEL_W, totalBottom)
   ctx.stroke()
 
-  // Subdivision lines scrolling up
+  // Subdivision lines (timeline area only, scroll left)
   if (gridStart !== null) {
     const sub = subdivMs(mode, bpm)
     const elapsed = now - gridStart
     const offsetPx = (elapsed % sub) * SCROLL_PX_PER_MS
-    let y = HIT_ZONE_Y - offsetPx
-    while (y > 0) {
+    let x = HIT_ZONE_X - offsetPx
+    while (x > LABEL_W) {
       ctx.strokeStyle = "rgba(100,100,180,0.35)"
       ctx.lineWidth = 1
       ctx.setLineDash([4, 4])
       ctx.beginPath()
-      ctx.moveTo(laneX, y); ctx.lineTo(laneX + LANE_W, y)
+      ctx.moveTo(x, TOP_PAD); ctx.lineTo(x, totalBottom)
       ctx.stroke()
       ctx.setLineDash([])
-      y -= sub * SCROLL_PX_PER_MS
+      x -= sub * SCROLL_PX_PER_MS
     }
   }
 
-  // Hit zone line
+  // Hit zone line (spans all lanes)
   ctx.strokeStyle = "rgba(255,255,255,0.5)"
   ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.moveTo(laneX - 8, HIT_ZONE_Y); ctx.lineTo(laneX + LANE_W + 8, HIT_ZONE_Y)
+  ctx.moveTo(HIT_ZONE_X, TOP_PAD - 4)
+  ctx.lineTo(HIT_ZONE_X, totalBottom + 4)
   ctx.stroke()
 
-  // Hits (gems + ghost outlines)
-  const MAX_DEV_PX = LANE_W / 2 - 4  // max horizontal offset inside lane
-  const MAX_DEV_MS = 50               // 50ms = full offset
+  // Hits per lane
+  for (let i = 0; i < lanes.length; i++) {
+    const lane = lanes[i]
+    const y = laneTop(i)
+    const centerY = y + LANE_H / 2
 
-  for (const hit of hits) {
-    const age = now - hit.arrivedAt
-    if (age > HIT_FADE_MS) continue
-    const alpha = Math.max(0, 1 - age / HIT_FADE_MS)
-    const ageScrolled = age * SCROLL_PX_PER_MS
-    const y = HIT_ZONE_Y - ageScrolled
-    if (y < -10) continue
+    for (const hit of ghHits) {
+      if (hit.note !== lane.note) continue
+      const age = now - hit.arrivedAt
+      if (age > HIT_FADE_MS) continue
+      const alpha = Math.max(0, 1 - age / HIT_FADE_MS)
 
-    const devClamped = Math.max(-MAX_DEV_MS, Math.min(MAX_DEV_MS, hit.deviationMs))
-    const offsetX = (devClamped / MAX_DEV_MS) * MAX_DEV_PX
-    const cx = CANVAS_W / 2 + offsetX
-    const ghostX = CANVAS_W / 2
-    const r = 6
-    const color = deviationColor(Math.abs(hit.deviationMs))
+      const actualX = HIT_ZONE_X - age * SCROLL_PX_PER_MS
+      const quantX = actualX - hit.deviationMs * SCROLL_PX_PER_MS
+      if (actualX < LABEL_W - 20 && quantX < LABEL_W - 20) continue
 
-    // Connecting line from ghost to gem
-    if (Math.abs(offsetX) > 2) {
-      ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.4})`
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(ghostX, y); ctx.lineTo(cx, y)
-      ctx.stroke()
+      const color = deviationColor(Math.abs(hit.deviationMs))
+      const isAccurate = Math.abs(hit.deviationMs) < 20
+
+      // Error fill between beat and actual hit
+      const fillL = Math.max(LABEL_W, Math.min(actualX, quantX))
+      const fillR = Math.max(LABEL_W, Math.max(actualX, quantX))
+      ctx.globalAlpha = alpha * 0.35
+      ctx.fillStyle = color
+      ctx.fillRect(fillL, y, Math.max(2, fillR - fillL), LANE_H)
+      ctx.globalAlpha = 1
+
+      // Quantized beat line (white)
+      if (quantX >= LABEL_W) {
+        ctx.globalAlpha = alpha * 0.7
+        ctx.strokeStyle = "#ffffff"
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(quantX, y); ctx.lineTo(quantX, y + LANE_H)
+        ctx.stroke()
+      }
+
+      // Actual hit line (lane color tinted by accuracy)
+      if (actualX >= LABEL_W) {
+        ctx.globalAlpha = alpha
+        ctx.strokeStyle = color
+        ctx.lineWidth = isAccurate ? 3 : 2
+        ctx.beginPath()
+        ctx.moveTo(actualX, y); ctx.lineTo(actualX, y + LANE_H)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+
+      // Sparkle for accurate hits
+      if (isAccurate && age < 700 && actualX >= LABEL_W) {
+        const progress = age / 700
+        const burstAlpha = Math.pow(1 - progress, 1.5)
+
+        if (age < 250) {
+          const glowAlpha = ((250 - age) / 250) * 0.6
+          const grad = ctx.createLinearGradient(actualX - 10, 0, actualX + 10, 0)
+          grad.addColorStop(0, "transparent")
+          grad.addColorStop(0.5, lane.color)
+          grad.addColorStop(1, "transparent")
+          ctx.globalAlpha = glowAlpha
+          ctx.fillStyle = grad
+          ctx.fillRect(actualX - 10, y, 20, LANE_H)
+          ctx.globalAlpha = 1
+        }
+
+        const seed = hit.arrivedAt % 1000
+        for (let j = 0; j < 8; j++) {
+          const angle = (j / 8) * Math.PI * 2 + seed * 0.006
+          const dist = progress * 6
+          const px = actualX + Math.cos(angle) * dist
+          const py = centerY + Math.sin(angle) * dist
+          if (px < LABEL_W) continue
+          ctx.globalAlpha = burstAlpha
+          ctx.fillStyle = j % 2 === 0 ? lane.color : "#ffffff"
+          ctx.beginPath()
+          ctx.arc(px, py, 1.5 * (1 - progress), 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+      }
     }
-
-    // Ghost outline at quantized position
-    ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.5})`
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.arc(ghostX, y, r, 0, Math.PI * 2)
-    ctx.stroke()
-
-    // Solid gem at actual hit position
-    ctx.globalAlpha = alpha
-    ctx.fillStyle = color
-    ctx.beginPath()
-    ctx.arc(cx, y, r, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.globalAlpha = 1
   }
-
-  // Labels
-  ctx.fillStyle = "rgba(255,255,255,0.3)"
-  ctx.font = "10px monospace"
-  ctx.textAlign = "left"
-  ctx.fillText("early ←", laneX - LANE_W - 40, HIT_ZONE_Y + 4)
-  ctx.textAlign = "right"
-  ctx.fillText("→ late", laneX + LANE_W + LANE_W + 40, HIT_ZONE_Y + 4)
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function DrumRecorder({ bpm, isMetronomePlaying, gridStartTime, onSessionEnd }: DrumRecorderProps) {
-  const [source, setSource] = useState<"audio" | "midi">("audio")
+export function DrumRecorder({ bpm, isMetronomePlaying, gridStartTime, onSessionEnd, onRequestStart, onRequestStop }: DrumRecorderProps) {
   const [quantMode, setQuantMode] = useState<QuantMode>("1/8")
-  const [swingRatio, setSwingRatio] = useState(0.625)  // ~62.5% ≈ light swing
-  const [sensitivity, setSensitivity] = useState(1.5)
+  const [swingRatio, setSwingRatio] = useState(0.625)
+  const [latencyMs, setLatencyMs] = useState(() => {
+    // Best-effort initialisation from browser-reported audio output latency.
+    // Chrome on macOS often under-reports, so this may still need manual tuning.
+    try {
+      const ctx = new AudioContext()
+      const ms = Math.round(((ctx.outputLatency ?? 0) + (ctx.baseLatency ?? 0)) * 1000)
+      ctx.close()
+      return ms
+    } catch {
+      return 0
+    }
+  })
   const [isRecording, setIsRecording] = useState(false)
   const [hits, setHits] = useState<HitRecord[]>([])
+  const [lanes, setLanes] = useState<DrumLane[]>([])
 
+  // Refs for values read inside animation loop / callbacks without stale closures
+  const lanesRef = useRef<DrumLane[]>([])
   const ghHitsRef = useRef<GhHit[]>([])
+  const allHitsRef = useRef<GhHit[]>([])   // full unfiltered history for scrollback
   const animFrameRef = useRef<number>(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  // Audio detection refs
-  const streamRef = useRef<MediaStream | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const prevMagRef = useRef<Float32Array | null>(null)
-  const fluxHistRef = useRef<number[]>([])
-  const lastHitRef = useRef<number>(0)
-  const audioRafRef = useRef<number>(0)
-
-  // MIDI refs
+  const scrollLabelRef = useRef<HTMLSpanElement>(null)
   const midiAccessRef = useRef<MIDIAccess | null>(null)
+  const isRecordingRef = useRef(false)
+  const freezeTimeRef = useRef<number | null>(null)  // set when recording stops
+  const viewOffsetRef = useRef(0)                    // ms scrolled back from freeze point
 
-  // Keep stable refs for current values used in callbacks
   const gridStartRef = useRef(gridStartTime)
   const quantModeRef = useRef(quantMode)
   const bpmRef = useRef(bpm)
   const swingRef = useRef(swingRatio)
-  const sensitivityRef = useRef(sensitivity)
+  const latencyRef = useRef(latencyMs)
   useEffect(() => { gridStartRef.current = gridStartTime }, [gridStartTime])
   useEffect(() => { quantModeRef.current = quantMode }, [quantMode])
   useEffect(() => { bpmRef.current = bpm }, [bpm])
   useEffect(() => { swingRef.current = swingRatio }, [swingRatio])
-  useEffect(() => { sensitivityRef.current = sensitivity }, [sensitivity])
+  useEffect(() => { latencyRef.current = latencyMs }, [latencyMs])
 
-  const recordHit = useCallback((hitTime: number) => {
-    if (!gridStartRef.current) return
-    const dev = calcDeviation(hitTime, gridStartRef.current, quantModeRef.current, bpmRef.current, swingRef.current)
-    setHits(prev => [...prev, { deviationMs: dev, timestamp: hitTime }])
-    ghHitsRef.current = [...ghHitsRef.current, { deviationMs: dev, arrivedAt: performance.now() }]
-  }, [])
-
-  // Canvas animation loop
+  // ── Canvas animation loop ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!canvasRef.current) return
     const canvas = canvasRef.current
     const ctx = canvas.getContext("2d")!
 
+    // Wheel handler — only active when frozen; scroll back/forward through history
+    const onWheel = (e: WheelEvent) => {
+      if (freezeTimeRef.current === null) return
+      e.preventDefault()
+      const delta = e.deltaMode === 1 ? e.deltaX * 16 || e.deltaY * 16  // line mode
+                                      : e.deltaX || e.deltaY             // pixel mode
+      const maxOffset = freezeTimeRef.current - (ghHitsRef.current[0]?.arrivedAt ?? freezeTimeRef.current)
+      viewOffsetRef.current = Math.max(0, Math.min(maxOffset, viewOffsetRef.current + delta * 10))
+    }
+    canvas.addEventListener("wheel", onWheel, { passive: false })
+
     let running = true
     function frame() {
       if (!running) return
       const now = performance.now()
-      // Prune old hits
-      ghHitsRef.current = ghHitsRef.current.filter(h => now - h.arrivedAt < HIT_FADE_MS + 200)
-      drawGrid(ctx, now, ghHitsRef.current, bpmRef.current, quantModeRef.current, gridStartRef.current)
+      const frozen = freezeTimeRef.current !== null
+      const renderNow = frozen ? freezeTimeRef.current! - viewOffsetRef.current : now
+
+      // Only trim live hits; keep all hits for history navigation
+      if (!frozen) {
+        ghHitsRef.current = ghHitsRef.current.filter(h => now - h.arrivedAt < HIT_FADE_MS + 200)
+      }
+
+      const adjustedStart = gridStartRef.current !== null
+        ? gridStartRef.current + latencyRef.current
+        : null
+      drawGrid(ctx, canvas.width, canvas.height, renderNow, ghHitsRef.current, lanesRef.current, bpmRef.current, quantModeRef.current, adjustedStart)
+
+      // Scroll label
+      if (scrollLabelRef.current) {
+        if (frozen && viewOffsetRef.current > 0) {
+          scrollLabelRef.current.textContent = `−${(viewOffsetRef.current / 1000).toFixed(1)} s`
+          scrollLabelRef.current.style.opacity = "1"
+        } else {
+          scrollLabelRef.current.style.opacity = "0"
+        }
+      }
+
       animFrameRef.current = requestAnimationFrame(frame)
     }
     animFrameRef.current = requestAnimationFrame(frame)
     return () => {
       running = false
       cancelAnimationFrame(animFrameRef.current)
+      canvas.removeEventListener("wheel", onWheel)
     }
   }, [])
 
-  const stopAudio = useCallback(() => {
-    cancelAnimationFrame(audioRafRef.current)
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    audioCtxRef.current?.close()
-    streamRef.current = null
-    audioCtxRef.current = null
-    analyserRef.current = null
+  // ── MIDI ─────────────────────────────────────────────────────────────────────
+
+  const handleNoteOn = useCallback((note: number, hitTime: number) => {
+    // Register new lane on first hit for this note (always, even before recording)
+    if (!lanesRef.current.find(l => l.note === note)) {
+      const gmInfo = GM_DRUMS[note]
+      const newLane: DrumLane = {
+        note,
+        label: gmInfo?.label ?? `Note ${note}`,
+        color: LANE_COLORS[lanesRef.current.length % LANE_COLORS.length],
+        order: gmInfo?.order ?? 1000 + note,
+      }
+      const sorted = [...lanesRef.current, newLane].sort((a, b) => a.order - b.order)
+      lanesRef.current = sorted
+      setLanes(sorted)
+    }
+
+    // Only record deviation hits while recording is active and grid is running
+    if (!isRecordingRef.current || !gridStartRef.current) return
+    const adjustedStart = gridStartRef.current + latencyRef.current
+    const dev = calcDeviation(hitTime, adjustedStart, quantModeRef.current, bpmRef.current, swingRef.current)
+    const ghHit = { note, deviationMs: dev, arrivedAt: performance.now() }
+    setHits(prev => [...prev, { note, deviationMs: dev, timestamp: hitTime }])
+    ghHitsRef.current = [...ghHitsRef.current, ghHit]
+    allHitsRef.current = [...allHitsRef.current, ghHit]
   }, [])
 
-  const startAudio = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-    streamRef.current = stream
-    const ctx = new AudioContext()
-    audioCtxRef.current = ctx
-    const source = ctx.createMediaStreamSource(stream)
-    const analyser = ctx.createAnalyser()
-    analyser.fftSize = 1024
-    source.connect(analyser)
-    analyserRef.current = analyser
-
-    const bufLen = analyser.frequencyBinCount
-    const magBuf = new Float32Array(bufLen)
-    prevMagRef.current = new Float32Array(bufLen)
-    fluxHistRef.current = []
-
-    function detect() {
-      const analyserNode = analyserRef.current
-      if (!analyserNode) return
-      analyserNode.getFloatFrequencyData(magBuf)
-
-      // Convert dB to linear magnitude
-      let flux = 0
-      const prev = prevMagRef.current!
-      for (let k = 0; k < bufLen; k++) {
-        const mag = Math.pow(10, magBuf[k] / 20)
-        const diff = mag - (Math.pow(10, prev[k] / 20))
-        flux += diff > 0 ? diff : 0
-        prev[k] = magBuf[k]
-      }
-
-      fluxHistRef.current.push(flux)
-      if (fluxHistRef.current.length > 43) fluxHistRef.current.shift()
-      const mean = fluxHistRef.current.reduce((a, b) => a + b, 0) / fluxHistRef.current.length
-      const threshold = mean * sensitivityRef.current
-
-      const now = performance.now()
-      if (flux > threshold && now - lastHitRef.current > 80) {
-        lastHitRef.current = now
-        recordHit(now)
-      }
-
-      audioRafRef.current = requestAnimationFrame(detect)
+  const attachMidiHandler = useCallback((input: MIDIInput) => {
+    input.onmidimessage = (e: MIDIMessageEvent) => {
+      if (!e.data) return
+      const [status, note, velocity] = Array.from(e.data)
+      if ((status & 0xf0) !== 0x90 || velocity === 0) return
+      handleNoteOn(note, e.timeStamp)
     }
-    audioRafRef.current = requestAnimationFrame(detect)
-  }, [recordHit])
+  }, [handleNoteOn])
 
-  const stopMidi = useCallback(() => {
-    if (midiAccessRef.current) {
-      for (const input of midiAccessRef.current.inputs.values()) {
-        input.onmidimessage = null
+  useEffect(() => {
+    if (!navigator.requestMIDIAccess) return
+    let active = true
+    navigator.requestMIDIAccess().then(access => {
+      if (!active) return
+      midiAccessRef.current = access
+      for (const input of access.inputs.values()) attachMidiHandler(input)
+      access.onstatechange = () => {
+        for (const input of access.inputs.values()) {
+          if (!input.onmidimessage) attachMidiHandler(input)
+        }
       }
-    }
-  }, [])
-
-  const startMidi = useCallback(async () => {
-    if (!navigator.requestMIDIAccess) {
-      alert("Web MIDI is not supported in this browser. Try Chrome.")
-      return
-    }
-    const access = await navigator.requestMIDIAccess()
-    midiAccessRef.current = access
-    for (const input of access.inputs.values()) {
-      input.onmidimessage = (e: MIDIMessageEvent) => {
-        if (!e.data) return
-        const [status, , velocity] = Array.from(e.data)
-        if ((status & 0xf0) === 0x90 && velocity > 0) {
-          recordHit(e.timeStamp)
+    }).catch(() => {})
+    return () => {
+      active = false
+      if (midiAccessRef.current) {
+        for (const input of midiAccessRef.current.inputs.values()) {
+          input.onmidimessage = null
         }
       }
     }
-  }, [recordHit])
+  }, [attachMidiHandler])
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(() => {
     setHits([])
     ghHitsRef.current = []
+    allHitsRef.current = []
+    freezeTimeRef.current = null
+    viewOffsetRef.current = 0
+    isRecordingRef.current = true
     setIsRecording(true)
-    try {
-      if (source === "audio") await startAudio()
-      else await startMidi()
-    } catch {
-      setIsRecording(false)
-    }
-  }, [source, startAudio, startMidi])
+    onRequestStart?.()
+  }, [onRequestStart])
 
   const stopRecording = useCallback(() => {
+    isRecordingRef.current = false
+    freezeTimeRef.current = performance.now()
+    viewOffsetRef.current = 0
+    ghHitsRef.current = [...allHitsRef.current]  // restore full history for scrollback
     setIsRecording(false)
-    if (source === "audio") stopAudio()
-    else stopMidi()
-
+    onRequestStop?.()
     setHits(prev => {
       if (prev.length === 0) return prev
       const devs = prev.map(h => h.deviationMs)
@@ -372,9 +541,8 @@ export function DrumRecorder({ bpm, isMetronomePlaying, gridStartTime, onSession
       onSessionEnd({ avgDeviationMs: avg, deviationStdMs: std, hitCount: devs.length })
       return prev
     })
-  }, [source, stopAudio, stopMidi, onSessionEnd])
+  }, [onSessionEnd, onRequestStop])
 
-  // Stop recording if metronome stops (deferred to avoid setState in effect body)
   useEffect(() => {
     if (!isMetronomePlaying && isRecording) {
       const id = setTimeout(stopRecording, 0)
@@ -382,53 +550,44 @@ export function DrumRecorder({ bpm, isMetronomePlaying, gridStartTime, onSession
     }
   }, [isMetronomePlaying, isRecording, stopRecording])
 
-  useEffect(() => () => { stopAudio(); stopMidi() }, [stopAudio, stopMidi])
+  // ── Derived stats ─────────────────────────────────────────────────────────────
 
   const isSwing = quantMode === "1/8S" || quantMode === "1/16S"
-  const avgDev = hits.length > 0
+
+  const laneStats = lanes.map(lane => {
+    const laneHits = hits.filter(h => h.note === lane.note)
+    if (laneHits.length === 0) return { lane, avg: null, std: null, count: 0 }
+    const devs = laneHits.map(h => h.deviationMs)
+    const avg = devs.reduce((a, b) => a + b, 0) / devs.length
+    const std = devs.length > 1
+      ? Math.sqrt(devs.reduce((a, b) => a + (b - avg) ** 2, 0) / devs.length)
+      : 0
+    return { lane, avg, std, count: devs.length }
+  })
+
+  const aggregateAvg = hits.length > 0
     ? hits.reduce((a, h) => a + h.deviationMs, 0) / hits.length
     : null
-  const stdDev = hits.length > 1 && avgDev !== null
-    ? Math.sqrt(hits.reduce((a, h) => a + (h.deviationMs - avgDev!) ** 2, 0) / hits.length)
+  const aggregateStd = hits.length > 1 && aggregateAvg !== null
+    ? Math.sqrt(hits.reduce((a, h) => a + (h.deviationMs - aggregateAvg!) ** 2, 0) / hits.length)
     : null
+
+  const cvH = canvasH(lanes.length)
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        Accuracy Recorder
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+        <Piano className="h-4 w-4" /> Accuracy Recorder
       </h3>
 
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-end">
-        {/* Source toggle */}
-        <div className="space-y-1">
-          <Label className="text-xs">Source</Label>
-          <div className="flex rounded-md border overflow-hidden">
-            <button
-              className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${source === "audio" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-              onClick={() => !isRecording && setSource("audio")}
-              disabled={isRecording}
-            >
-              <Mic className="h-3 w-3" /> Mic
-            </button>
-            <button
-              className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${source === "midi" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
-              onClick={() => !isRecording && setSource("midi")}
-              disabled={isRecording}
-            >
-              <Piano className="h-3 w-3" /> MIDI
-            </button>
-          </div>
-        </div>
-
-        {/* Quantization */}
         <div className="space-y-1">
           <Label className="text-xs">Quantize</Label>
           <select
             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
             value={quantMode}
-            onChange={e => !isRecording && setQuantMode(e.target.value as QuantMode)}
-            disabled={isRecording}
+            onChange={e => setQuantMode(e.target.value as QuantMode)}
           >
             <option value="1/4">1/4</option>
             <option value="1/8">1/8</option>
@@ -439,89 +598,141 @@ export function DrumRecorder({ bpm, isMetronomePlaying, gridStartTime, onSession
             <option value="1/16T">1/16 Triplet</option>
             <option value="1/8S">1/8 Swing</option>
             <option value="1/16S">1/16 Swing</option>
+            <option value="1/8+T">1/8 + Triplet</option>
+            <option value="1/16+T">1/16 + Triplet</option>
           </select>
         </div>
 
-        {/* Swing slider */}
         {isSwing && (
           <div className="space-y-1">
             <Label className="text-xs">Swing {Math.round(swingRatio * 100)}%</Label>
             <input
-              type="range"
-              min={50}
-              max={75}
-              step={1}
+              type="range" min={50} max={75} step={1}
               value={Math.round(swingRatio * 100)}
               onChange={e => setSwingRatio(Number(e.target.value) / 100)}
               className="w-24 accent-primary"
-              disabled={isRecording}
             />
           </div>
         )}
 
-        {/* Sensitivity (audio mode only) */}
-        {source === "audio" && (
-          <div className="space-y-1">
-            <Label className="text-xs">Sensitivity {sensitivity.toFixed(1)}×</Label>
-            <input
-              type="range"
-              min={5}
-              max={30}
-              step={1}
-              value={Math.round(sensitivity * 10)}
-              onChange={e => setSensitivity(Number(e.target.value) / 10)}
-              className="w-24 accent-primary"
-              disabled={isRecording}
-            />
-          </div>
-        )}
-
-        {/* Record button */}
         <Button
           size="sm"
           variant={isRecording ? "destructive" : "default"}
-          disabled={!isMetronomePlaying}
           onClick={isRecording ? stopRecording : startRecording}
           className="ml-auto"
         >
-          {isRecording ? (
-            <><Square className="mr-1.5 h-3.5 w-3.5" /> Stop</>
-          ) : (
-            <><Play className="mr-1.5 h-3.5 w-3.5" /> Record</>
-          )}
+          {isRecording
+            ? <><Square className="mr-1.5 h-3.5 w-3.5" /> Stop</>
+            : <><Play className="mr-1.5 h-3.5 w-3.5" /> Record</>}
         </Button>
       </div>
 
-      {!isMetronomePlaying && !isRecording && (
-        <p className="text-xs text-muted-foreground">Start the metronome to enable recording.</p>
-      )}
+      {/* Latency offset */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-muted-foreground">Latency offset</Label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={0}
+              max={200}
+              value={latencyMs}
+              onChange={e => setLatencyMs(Math.max(0, Math.min(200, Number(e.target.value))))}
+              className="w-16 h-6 rounded border border-input bg-background px-2 text-xs text-right tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <span className="text-xs text-muted-foreground">ms</span>
+          </div>
+        </div>
+        <div className="relative">
+          <input
+            type="range" min={0} max={200} step={1}
+            value={latencyMs}
+            onChange={e => setLatencyMs(Number(e.target.value))}
+            className="w-full accent-primary"
+          />
+          <div className="flex justify-between text-xs text-muted-foreground/50 tabular-nums mt-0.5 pointer-events-none select-none">
+            <span>0</span>
+            <span>200 ms</span>
+          </div>
+        </div>
+      </div>
 
-      {/* Guitar Hero visual grid */}
-      <div className="flex justify-center">
+      {/* Timeline canvas — height grows as new lanes appear */}
+      <div className="relative">
         <canvas
           ref={canvasRef}
           width={CANVAS_W}
-          height={CANVAS_H}
-          className="rounded-md"
-          style={{ imageRendering: "pixelated" }}
+          height={cvH}
+          className="rounded-md block"
+          style={{ width: "100%", height: "auto", cursor: isRecording ? "default" : "ew-resize" }}
+        />
+        <span
+          ref={scrollLabelRef}
+          className="absolute top-1 right-2 text-xs font-mono text-muted-foreground/60 pointer-events-none transition-opacity duration-150"
+          style={{ opacity: 0 }}
         />
       </div>
 
-      {/* Stats */}
-      {hits.length > 0 && avgDev !== null && (
-        <div className="flex gap-4 text-xs text-muted-foreground font-mono">
-          <span>
-            Avg:{" "}
-            <span style={{ color: deviationColor(Math.abs(avgDev)) }}>
-              {avgDev > 0 ? "+" : ""}{avgDev.toFixed(1)} ms
-            </span>
-          </span>
-          {stdDev !== null && (
-            <span>Std: ±{stdDev.toFixed(1)} ms</span>
+      {/* Per-lane stats + aggregate */}
+      {hits.length > 0 && (
+        <div className="space-y-1 text-xs font-mono">
+          {laneStats.map(({ lane, avg, std, count }) =>
+            avg !== null ? (
+              <div key={lane.note} className="flex items-center gap-3 text-muted-foreground">
+                <span className="w-16 truncate font-medium" style={{ color: lane.color }}>
+                  {lane.label}
+                </span>
+                <span>
+                  avg{" "}
+                  <span style={{ color: deviationColor(Math.abs(avg)) }}>
+                    {avg >= 0 ? "+" : ""}{avg.toFixed(1)} ms
+                  </span>
+                </span>
+                {std !== null && <span>±{std.toFixed(1)} ms</span>}
+                <span>{count} hits</span>
+              </div>
+            ) : null
           )}
-          <span>Hits: {hits.length}</span>
+          {aggregateAvg !== null && lanes.length > 1 && (
+            <div className="flex items-center gap-3 text-muted-foreground border-t border-border/40 pt-1 mt-1">
+              <span className="w-16 font-medium text-muted-foreground/60">Total</span>
+              <span>
+                avg{" "}
+                <span style={{ color: deviationColor(Math.abs(aggregateAvg)) }}>
+                  {aggregateAvg >= 0 ? "+" : ""}{aggregateAvg.toFixed(1)} ms
+                </span>
+              </span>
+              {aggregateStd !== null && <span>±{aggregateStd.toFixed(1)} ms</span>}
+              <span>{hits.length} hits</span>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Test pads */}
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground/50">Test pads</p>
+        <div className="flex flex-wrap gap-1.5">
+          {([
+            { note: 36, label: "Kick" },
+            { note: 38, label: "Snare" },
+            { note: 42, label: "HH" },
+            { note: 46, label: "Open HH" },
+            { note: 41, label: "Lo Tom" },
+            { note: 45, label: "Mid Tom" },
+            { note: 43, label: "Hi Tom" },
+            { note: 49, label: "Crash" },
+          ] as const).map(({ note, label }) => (
+            <button
+              key={note}
+              onPointerDown={() => handleNoteOn(note, performance.now())}
+              className="px-2.5 py-1 rounded text-xs border border-input bg-muted hover:bg-muted/70 active:scale-95 select-none transition-transform"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

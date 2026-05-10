@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Metronome } from "@/components/goals/Metronome"
+import { Metronome, type MetronomeHandle } from "@/components/goals/Metronome"
 import { DrumRecorder, type SessionStats } from "@/components/goals/DrumRecorder"
 import { ProgressEntryForm } from "@/components/progress/ProgressEntryForm"
 import type { GoalType, ProgressEntry } from "@prisma/client"
@@ -29,6 +29,8 @@ export function PracticeSection({
   const [showRecorder, setShowRecorder] = useState(false)
   const [accuracyStats, setAccuracyStats] = useState<SessionStats | null>(null)
 
+  const metronomeRef = useRef<MetronomeHandle>(null)
+
   const handleStart = useCallback((newBpm: number, perfTime: number) => {
     setBpm(newBpm)
     setGridStartTime(perfTime)
@@ -39,6 +41,14 @@ export function PracticeSection({
     setIsPlaying(false)
   }, [])
 
+  const handleRecordStart = useCallback(() => {
+    if (!metronomeRef.current?.isPlaying()) metronomeRef.current?.start()
+  }, [])
+
+  const handleRecordStop = useCallback(() => {
+    metronomeRef.current?.stop()
+  }, [])
+
   const handleSessionEnd = useCallback((stats: SessionStats) => {
     setAccuracyStats(stats)
   }, [])
@@ -46,6 +56,7 @@ export function PracticeSection({
   return (
     <div className="space-y-3">
       <Metronome
+        ref={metronomeRef}
         defaultBpm={defaultBpm}
         onStart={handleStart}
         onStop={handleStop}
@@ -71,6 +82,8 @@ export function PracticeSection({
           isMetronomePlaying={isPlaying}
           gridStartTime={gridStartTime}
           onSessionEnd={handleSessionEnd}
+          onRequestStart={handleRecordStart}
+          onRequestStop={handleRecordStop}
         />
       )}
 

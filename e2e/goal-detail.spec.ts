@@ -58,4 +58,26 @@ test.describe("Goal detail page — authenticated", () => {
     const progressSection = page.getByText(/progress|session notes/i).first()
     await expect(progressSection).toBeVisible()
   })
+
+  test("Record button auto-starts the metronome; Stop stops both", async ({ page }) => {
+    await page.goto(`/goals/${GOAL_ID}`)
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+
+    // Show the accuracy recorder panel
+    await page.getByText(/show accuracy recorder/i).click()
+
+    // Metronome is idle — shows "Start"
+    await expect(page.getByRole("button", { name: "Start" })).toBeVisible()
+
+    // Clicking Record should auto-start the metronome
+    await page.getByRole("button", { name: "Record" }).click()
+
+    // "Start" is replaced by two "Stop" buttons (metronome + recorder)
+    await expect(page.getByRole("button", { name: "Start" })).not.toBeVisible()
+    await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(2)
+
+    // Clicking the recorder Stop (rendered after the metronome Stop) stops both
+    await page.getByRole("button", { name: "Stop" }).last().click()
+    await expect(page.getByRole("button", { name: "Start" })).toBeVisible()
+  })
 })
