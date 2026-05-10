@@ -533,14 +533,13 @@ export function DrumRecorder({ bpm, isMetronomePlaying, gridStartTime, onSession
     ghHitsRef.current = [...allHitsRef.current]  // restore full history for scrollback
     setIsRecording(false)
     onRequestStop?.()
-    setHits(prev => {
-      if (prev.length === 0) return prev
-      const devs = prev.map(h => h.deviationMs)
+    const currentHits = allHitsRef.current
+    if (currentHits.length > 0) {
+      const devs = currentHits.map(h => h.deviationMs)
       const avg = devs.reduce((a, b) => a + b, 0) / devs.length
       const std = Math.sqrt(devs.reduce((a, b) => a + (b - avg) ** 2, 0) / devs.length)
       onSessionEnd({ avgDeviationMs: avg, deviationStdMs: std, hitCount: devs.length })
-      return prev
-    })
+    }
   }, [onSessionEnd, onRequestStop])
 
   useEffect(() => {
