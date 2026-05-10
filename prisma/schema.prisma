@@ -94,13 +94,16 @@ enum Hand {
 }
 
 model ProgressEntry {
-  id        String   @id @default(cuid())
-  goalId    String
-  bpm       Int?
-  hand      Hand?
-  note      String?  @db.Text
-  date      DateTime @default(now())
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  goalId         String
+  bpm            Int?
+  hand           Hand?
+  note           String?  @db.Text
+  date           DateTime @default(now())
+  createdAt      DateTime @default(now())
+  avgDeviationMs Float?
+  deviationStdMs Float?
+  hitCount       Int?
 
   goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
 

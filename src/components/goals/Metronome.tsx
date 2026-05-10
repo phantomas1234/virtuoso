@@ -1,14 +1,23 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react"
 import { Play, Square, Minus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface MetronomeProps {
   defaultBpm?: number
+  onStart?: (bpm: number, startPerfTime: number) => void
+  onStop?: () => void
 }
 
-export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
+export interface MetronomeHandle {
+  start: () => void
+  stop: () => void
+  isPlaying: () => boolean
+}
+
+export const Metronome = forwardRef<MetronomeHandle, MetronomeProps>(
+function Metronome({ defaultBpm = 120, onStart, onStop }: MetronomeProps, ref) {
   const [bpm, setBpm] = useState(Math.min(240, Math.max(40, defaultBpm)))
   const [isPlaying, setIsPlaying] = useState(false)
   const [flash, setFlash] = useState(false)
@@ -52,6 +61,11 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
 
   useEffect(() => { schedulerRef.current = scheduler }, [scheduler])
 
+  const onStartRef = useRef(onStart)
+  const onStopRef = useRef(onStop)
+  useEffect(() => { onStartRef.current = onStart }, [onStart])
+  useEffect(() => { onStopRef.current = onStop }, [onStop])
+
   const start = useCallback(() => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new AudioContext()
@@ -61,7 +75,12 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
     nextBeatTimeRef.current = ctx.currentTime
     isPlayingRef.current = true
     setIsPlaying(true)
+    // Shift grid origin by total audio latency (output + base) so the grid
+    // aligns with when beats are actually heard, not when they are scheduled.
+    const totalLatencyMs = ((ctx.outputLatency ?? 0) + (ctx.baseLatency ?? 0)) * 1000
+    const perfNow = performance.now() + totalLatencyMs
     scheduler()
+    onStartRef.current?.(bpmRef.current, perfNow)
   }, [scheduler])
 
   const stop = useCallback(() => {
@@ -69,9 +88,16 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
     if (timerRef.current) clearTimeout(timerRef.current)
     setIsPlaying(false)
     setFlash(false)
+    onStopRef.current?.()
   }, [])
 
   useEffect(() => () => { isPlayingRef.current = false; if (timerRef.current) clearTimeout(timerRef.current) }, [])
+
+  useImperativeHandle(ref, () => ({
+    start,
+    stop,
+    isPlaying: () => isPlayingRef.current,
+  }), [start, stop])
 
   const clampedSet = (val: number) => setBpm(Math.min(240, Math.max(40, val)))
 
@@ -138,4 +164,4 @@ export function Metronome({ defaultBpm = 120 }: MetronomeProps) {
       </Button>
     </div>
   )
-}
+})

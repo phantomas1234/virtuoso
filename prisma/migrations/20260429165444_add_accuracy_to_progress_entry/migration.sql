@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "ProgressEntry" ADD COLUMN "avgDeviationMs" DOUBLE PRECISION,
+ADD COLUMN "deviationStdMs" DOUBLE PRECISION,
+ADD COLUMN "hitCount" INTEGER;
